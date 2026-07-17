@@ -1,0 +1,55 @@
+# ==========================================
+# 1. File Cache dan Kompilasi Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# 2. Lingkungan Virtual (Virtual Environment)
+# ==========================================
+venv/
+env/
+.env
+.venv/
+
+# ==========================================
+# 3. Dataset dan File Media (SANGAT PENTING)
+# ==========================================
+# Mengabaikan file video dan arsip agar tidak melebihi batas ukuran GitHub (100MB)
+*.mp4
+*.avi
+*.mkv
+*.zip
+*.tar.gz
+*.rar
+
+# Mengabaikan folder dataset lokal
+data/
+dataset/
+dataset_aktif/
+UBFC_Dataset/
+
+# ==========================================
+# 4. Bobot Model (Model Checkpoints) PyTorch
+# ==========================================
+*.pth
+*.pt
+*.ckpt
+weights/
+models_saved/
+
+# ==========================================
+# 5. File Konfigurasi Editor dan Sistem
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# 6. File Log dan Jupyter Notebook
+# ==========================================
+*.log
+.ipynb_checkpoints/
