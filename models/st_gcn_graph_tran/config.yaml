@@ -1,0 +1,27 @@
+# Konfigurasi ST-GCN + Graph-Transformer (MoodIn)
+model:
+  in_channels: 2          # (x, y) koordinat landmark; set 3 bila + confidence/z
+  num_class: 5
+  num_node: 68            # sesuaikan bila memakai subset MediaPipe berbeda
+  graph_strategy: spatial # uniform | distance | spatial
+  max_hop: 1
+  t_kernel: 9
+  transformer_layers: 2
+  transformer_heads: 8
+  dropout: 0.3
+
+data:
+  window_frames: 150      # ~5 detik @ 30 FPS untuk ekspresi (lihat W5/W6 di proposal)
+  fps: 30
+  stride_frames: 15       # overlap antar-window saat segmentasi
+  classes: [Ceria, Cemas, Tertekan, Rileks, Netral]
+
+train:
+  epochs: 80
+  batch_size: 16
+  lr: 0.001
+  weight_decay: 0.0001
+  optimizer: adamw
+  scheduler: cosine
+  device: cuda
+  checkpoint_dir: checkpoints

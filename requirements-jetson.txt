@@ -1,0 +1,27 @@
+# =====================================================================
+# Jetson Orin Nano Super - JetPack 6.2 (Ubuntu 22.04, Python 3.12)
+# CATATAN PEMASANGAN (bukan file pip biasa - baca dulu)
+# =====================================================================
+#
+# 1) torch & torchvision:
+#    JANGAN `pip install torch` dari PyPI di Jetson. Wheel PyPI tidak
+#    membawa CUDA untuk aarch64 Jetson -> hanya CPU / gagal.
+#    Pakai wheel resmi NVIDIA untuk JetPack 6 (jp6), contoh:
+#      pip install --no-cache \
+#        https://developer.download.nvidia.com/compute/redist/jp/v62/pytorch/<nama-wheel>.whl
+#    Ikuti panduan resmi "PyTorch for Jetson" (forums.developer.nvidia.com)
+#    dan pastikan versi torch cocok dengan versi torchvision hasil build NVIDIA.
+#
+# 2) Inferensi produksi sebaiknya lewat TensorRT (bukan onnxruntime murni):
+#    export ONNX -> trtexec / torch2trt -> engine INT8/FP16.
+#
+# ---- Dependency non-torch (boleh via pip di Jetson) ----
+numpy>=1.24,<2.0
+scipy>=1.10,<1.14
+opencv-python-headless>=4.8,<4.11   # headless: perangkat tanpa desktop GUI
+mediapipe==0.10.14
+PyYAML>=6.0
+tqdm>=4.66
+onnx>=1.15,<1.17
+# onnxruntime-gpu           # opsional; utamakan TensorRT untuk latensi terbaik
+paho-mqtt==2.1.0

@@ -1,74 +1,67 @@
-import torch
-import numpy as np
-import os
+"""Inferensi STC-rPPG (versi diperbaiki - lihat S1/S4 di CODE_REVIEW_root_files.md).
 
-# Mengimpor modul-modul yang telah kita bangun
-from preprocessing import FaceVideoProcessor
-from models.stc_rppg import STCrPPG
+Perubahan dari versi asli:
+- Import via paket (`from models import STCrPPG`) supaya kebal terhadap tabrakan
+  nama modul/paket `stc_rppg` (S1).
+- `torch.load(..., weights_only=True)` untuk keamanan & kompat torch >= 2.6 (S4).
+- Pakai FaceMeshVideoProcessor (MediaPipe) yang mengembalikan (C,T,H,W); batch
+  ditambahkan di sini dengan unsqueeze(0).
+"""
+import os
+import torch
+
+from models import STCrPPG
 from postprocessing import rPPGProcessor
+
+try:
+    # Disarankan (S2): pipeline MediaPipe tunggal untuk ROI + landmark.
+    from suggested.preprocessing_mediapipe import FaceMeshVideoProcessor as VideoProcessor
+except Exception:  # fallback ke versi lama bila MediaPipe belum dipasang
+    from preprocessing import FaceVideoProcessor as VideoProcessor
+
 
 def run_inference(video_path, weight_path=None):
     print("=== Memulai Inferensi STC-rPPG ===")
-    
-    # 1. Konfigurasi Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Menggunakan device komputasi: {device}")
+    print(f"Device komputasi: {device}")
 
-    # 2. Inisialisasi Modul
-    print("\nMempersiapkan pipeline...")
-    video_processor = FaceVideoProcessor(target_size=(128, 128), seq_length=128)
+    processor = VideoProcessor(target_size=(128, 128), seq_length=128)
     model = STCrPPG().to(device)
-    post_processor = rPPGProcessor(fps=30.0)
+    post = rPPGProcessor(fps=30.0)
 
-    # 3. Memuat Bobot Model (Jika sudah dilatih)
     if weight_path and os.path.exists(weight_path):
-        print(f"Memuat bobot model dari {weight_path}...")
-        model.load_state_dict(torch.load(weight_path, map_location=device))
+        print(f"Memuat bobot: {weight_path}")
+        state = torch.load(weight_path, map_location=device, weights_only=True)
+        model.load_state_dict(state)
     else:
-        print("Peringatan: Bobot model tidak ditemukan. Menggunakan inisialisasi acak (hasil BPM tidak valid).")
+        print("Peringatan: bobot tidak ditemukan. Output BPM tidak valid (init acak).")
 
-    # Set model ke mode evaluasi (mematikan dropout dan batch norm updates)
     model.eval()
 
     try:
-        # 4. Pra-pemrosesan Data
-        print(f"\nMemproses video '{video_path}'...")
-        # Output video_tensor memiliki shape: (1, 3, 128, 128, 128)
-        video_tensor = video_processor.process_video(video_path)
-        
-        if video_tensor is None:
-            print("Gagal memproses video. Pastikan wajah terlihat jelas.")
-            return
+        clip = processor.process_video(video_path)
+        if clip is None:
+            print("Gagal memproses video (wajah tidak terdeteksi).")
+            return None
+        # (C,T,H,W) -> (1,C,T,H,W)
+        if clip.dim() == 4:
+            clip = clip.unsqueeze(0)
+        clip = clip.to(device)
 
-        # Pindahkan tensor ke GPU/CPU
-        video_tensor = video_tensor.to(device)
+        with torch.no_grad():
+            signal = model(clip)
+        raw = signal.squeeze().cpu().numpy()
 
-        # 5. Eksekusi Model (Forward Pass)
-        print("Mengekstrak sinyal fisiologis melalui jaringan saraf...")
-        with torch.no_grad(): # Mematikan perhitungan gradien agar memori lebih hemat
-            predicted_signal = model(video_tensor)
-            
-        # Pindahkan sinyal kembali ke CPU dan konversi ke numpy array 1D
-        raw_rppg = predicted_signal.squeeze().cpu().numpy()
-
-        # 6. Pasca-pemrosesan Data
-        print("Menyaring sinyal dan mengestimasi Detak Jantung (BPM)...")
-        clean_rppg = post_processor.filter_signal(raw_rppg)
-        bpm = post_processor.calculate_bpm(clean_rppg)
-
-        print("\n" + "="*40)
-        print(f" HASIL ESTIMASI DETAK JANTUNG: {bpm:.2f} BPM")
-        print("="*40 + "\n")
-
+        clean = post.filter_signal(raw)
+        bpm = post.calculate_bpm(clean)
+        print("\n" + "=" * 40)
+        print(f" ESTIMASI DETAK JANTUNG: {bpm:.2f} BPM")
+        print("=" * 40 + "\n")
+        return bpm
     except Exception as e:
-        print(f"Terjadi kesalahan saat inferensi: {e}")
+        print(f"Kesalahan saat inferensi: {e}")
+        return None
+
 
 if __name__ == "__main__":
-    # Tentukan nama file video uji (dummy data) Anda
-    target_video = "sample.mp4"
-    
-    # Path ke file bobot model jika Anda sudah menyimpannya melalui train.py
-    # Ganti menjadi None jika hanya ingin menguji aliran program
-    target_weights = "stc_rppg_weights.pth" 
-    
-    run_inference(target_video, target_weights)
+    run_inference("sample.mp4", "stc_rppg_weights.pth")

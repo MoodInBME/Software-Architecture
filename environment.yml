@@ -1,0 +1,30 @@
+# =====================================================================
+# MoodIn_Software - environment.yml (DRAFT)
+# Nama env diselaraskan dgn README teman Anda: 'moodin-ml'.
+# Sumber kanonik reprodusibilitas; requirements.txt diturunkan dari sini.
+# Buat: conda env create -f environment.yml ; conda activate moodin-ml
+# Catatan: untuk Jetson/Pi pakai wheel torch sesuai board, BUKAN file ini.
+# =====================================================================
+name: moodin-ml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy>=1.24,<2.0
+  - scipy>=1.10,<1.14
+  - pandas>=2.0,<2.3
+  - scikit-learn>=1.3,<1.6
+  - matplotlib>=3.7
+  - seaborn>=0.13
+  - pyyaml>=6.0
+  - tqdm>=4.66
+  - pip:
+      - torch==2.3.1
+      - torchvision==0.18.1
+      - opencv-python>=4.8,<4.11
+      - mediapipe==0.10.14
+      - onnx>=1.15,<1.17
+      - onnxruntime>=1.17,<1.19
+      - paho-mqtt==2.1.0
+      - kaggle>=1.6,<1.7
