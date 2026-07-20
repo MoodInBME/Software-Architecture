@@ -12,6 +12,7 @@ __pycache__/
 venv/
 env/
 .env
+*.env
 .venv/
 
 # ==========================================
@@ -21,12 +22,20 @@ env/
 *.mp4
 *.avi
 *.mkv
+*.mov
+*.webm
 *.zip
 *.tar.gz
 *.rar
 
-# Mengabaikan folder dataset lokal
-data/
+# Folder dataset lokal (mentah & hasil prapemrosesan)
+# CATATAN: JANGAN memakai "data/" polos seperti versi lama, karena folder data/
+# juga berisi KODE (data/loaders/, data/preprocessing/, data/dataset_cards/).
+# Abaikan hanya subfolder output di bawah agar kode tetap ter-commit.
+data/raw/
+data/interim/
+data/external/
+data/prepared/
 dataset/
 dataset_aktif/
 UBFC_Dataset/
@@ -37,6 +46,7 @@ UBFC_Dataset/
 *.pth
 *.pt
 *.ckpt
+*.onnx
 weights/
 models_saved/
 
@@ -53,3 +63,43 @@ Thumbs.db
 # ==========================================
 *.log
 .ipynb_checkpoints/
+
+# ==========================================
+# 7. Aff-Wild2 & Data Turunan (WAJIB - EULA Aff-Wild2)
+# ==========================================
+# "Database" mencakup data mentah, terproses, DAN anotasi. Redistribusi tanpa
+# izin tertulis = denda 5000 GBP (EULA bagian 3 & 8). Hanya signee yang boleh
+# memegang data ini; jangan sampai bocor ke repo (apalagi org publik MoodInBME).
+
+# Folder khusus Aff-Wild2 (varian penamaan apa pun)
+**/affwild2/
+**/aff-wild2/
+**/Aff-Wild2/
+**/aff_wild2/
+
+# Cache landmark & tensor turunan dari dataset
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.lmdb
+**/manifest.json
+
+# Anotasi Valence-Arousal / label per-frame (Aff-Wild2 ABAW)
+**/annotations/
+**/Annotations/
+**/VA_Set/
+**/EXPR_Set/
+**/AU_Set/
+
+# ==========================================
+# 8. Kredensial & Dokumen Pribadi (JANGAN commit)
+# ==========================================
+kaggle.json
+.kaggle/
+*.pem
+*.key
+# EULA bertanda tangan & bukti identitas mahasiswa
+*EULA*.pdf
+*ktm*
+*student_id*
