@@ -1,17 +1,17 @@
 """
-ST-GCN + Graph-Transformer untuk klasifikasi mood MoodIn (5 kelas).
+ST-GCN + Graph-Transformer untuk cabang ekspresi MoodIn.
 
-Alur:
-  input (N, C, T, V) landmark wajah
-    -> data BatchNorm
-    -> tumpukan STGCNBlock (ekstraksi fitur spatio-temporal graf)
-    -> pooling spasial (rata-rata node)
-    -> Temporal Transformer (dependensi temporal jangka panjang)
-    -> global temporal pooling
-    -> classifier (5 kelas: Ceria/Cemas/Tertekan/Rileks/Netral)
+Revisi (VA-bridge) atas versi awal:
+  * Head fleksibel via `head_type` (va | class | dual). Default 'va' (regresi
+    valence-arousal) sesuai alur fusion yang disepakati.
+  * forward() mengembalikan dict: {'va': (B,2)} atau {'logits': (B,5)} atau keduanya.
 
-Catatan: butuh PyTorch. Belum dieksekusi di sandbox (torch tidak terpasang
-& jaringan mati) -- sudah lulus py_compile untuk validasi sintaks.
+Kompatibel dengan komponen yang sudah ada:
+  * st_gcn_block.STGCNBlock(in, out, k_num, t_kernel, stride, residual, dropout)
+  * transformer.TemporalTransformer(d_model, nhead, num_layers, dim_ff, dropout)
+  * graph.FaceGraph(num_node, edges, strategy, max_hop, center).A -> (K, V, V)
+
+Butuh PyTorch (tidak dieksekusi di sandbox; lulus py_compile untuk sintaks).
 """
 import torch
 import torch.nn as nn
@@ -20,17 +20,21 @@ try:
     from .graph import FaceGraph
     from .st_gcn_block import STGCNBlock
     from .transformer import TemporalTransformer
+    from .heads import build_head
 except ImportError:  # dijalankan sebagai skrip lepas
     from graph import FaceGraph
     from st_gcn_block import STGCNBlock
     from transformer import TemporalTransformer
+    from heads import build_head
 
 
 class STGCN_GraphTransformer(nn.Module):
     def __init__(self, in_channels=2, num_class=5, num_node=68,
                  graph_strategy="spatial", max_hop=1, t_kernel=9,
-                 transformer_layers=2, transformer_heads=8, dropout=0.3):
+                 transformer_layers=2, transformer_heads=8, transformer_ff=512,
+                 dropout=0.3, head_type="va"):
         super().__init__()
+        self.head_type = head_type.lower()
         graph = FaceGraph(num_node=num_node, strategy=graph_strategy, max_hop=max_hop)
         A = torch.tensor(graph.A, dtype=torch.float32)
         self.register_buffer("A", A)
@@ -47,10 +51,9 @@ class STGCN_GraphTransformer(nn.Module):
         ])
         self.temporal_transformer = TemporalTransformer(
             d_model=256, nhead=transformer_heads,
-            num_layers=transformer_layers, dropout=dropout,
+            num_layers=transformer_layers, dim_ff=transformer_ff, dropout=dropout,
         )
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(256, num_class)
+        self.head = build_head(self.head_type, 256, num_class=num_class, dropout=dropout)
 
     def forward(self, x):
         # x: (N, C, T, V)
@@ -64,14 +67,16 @@ class STGCN_GraphTransformer(nn.Module):
         x = x.permute(0, 2, 1).contiguous()    # (N, T', 256)
         x = self.temporal_transformer(x)
         x = x.mean(dim=1)                      # (N, 256) global temporal pooling
-        x = self.dropout(x)
-        return self.fc(x)
+        out = self.head(x)
+        if isinstance(out, dict):
+            return out
+        if self.head_type == "va":
+            return {"va": out}
+        return {"logits": out}
 
 
 if __name__ == "__main__":
-    model = STGCN_GraphTransformer()
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"Total parameter: {n_params/1e6:.2f} M")
-    dummy = torch.randn(2, 2, 150, 68)  # (N, C, T, V)
-    out = model(dummy)
-    print("Bentuk output:", out.shape)  # harapan: (2, 5)
+    for ht in ("va", "class", "dual"):
+        m = STGCN_GraphTransformer(head_type=ht)
+        y = m(torch.randn(2, 2, 150, 68))
+        print(ht, {k: tuple(v.shape) for k, v in y.items()})

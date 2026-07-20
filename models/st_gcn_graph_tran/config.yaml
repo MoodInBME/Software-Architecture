@@ -1,20 +1,27 @@
-# Konfigurasi ST-GCN + Graph-Transformer (MoodIn)
+# Konfigurasi ST-GCN + Graph-Transformer (MoodIn) -- versi VA-bridge
 model:
-  in_channels: 2          # (x, y) koordinat landmark; set 3 bila + confidence/z
+  in_channels: 2          # (x, y) landmark; set 3 bila + confidence/z
   num_class: 5
-  num_node: 68            # sesuaikan bila memakai subset MediaPipe berbeda
+  num_node: 68            # subset iBUG dari MediaPipe FaceMesh (lihat landmark_map)
   graph_strategy: spatial # uniform | distance | spatial
   max_hop: 1
   t_kernel: 9
   transformer_layers: 2
   transformer_heads: 8
+  transformer_ff: 512     # dim_ff TemporalTransformer
   dropout: 0.3
+  head_type: va           # va | class | dual  (disepakati: va)
 
 data:
-  window_frames: 150      # ~5 detik @ 30 FPS untuk ekspresi (lihat W5/W6 di proposal)
+  window_frames: 150      # ~5 detik @ 30 FPS
   fps: 30
-  stride_frames: 15       # overlap antar-window saat segmentasi
-  classes: [Ceria, Cemas, Tertekan, Rileks, Netral]
+  stride_frames: 15
+  neutral_radius: 0.2
+
+loss:
+  # untuk head_type: dual
+  alpha_va: 1.0
+  beta_cls: 0.5
 
 train:
   epochs: 80
@@ -25,3 +32,4 @@ train:
   scheduler: cosine
   device: cuda
   checkpoint_dir: checkpoints
+  num_workers: 2
