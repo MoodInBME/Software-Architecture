@@ -10,7 +10,8 @@
 ![status](https://img.shields.io/badge/status-WIP-yellow)
 
 **Status:** 🚧 *Work in progress* (branch `main`). Perangkat keras (Jetson Orin Nano Super + kamera
-IMX477) **masih dalam pengiriman**, sehingga pengembangan saat ini berjalan di **laptop**.
+Arducam IMX477) **sudah di tangan dan sedang disiapkan** (JetPack 6.2.1, boot dari NVMe SSD);
+pelatihan model tetap di **laptop/Kaggle** sampai pipeline stabil.
 
 ---
 
@@ -70,9 +71,9 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-> **Catatan board edge:** JetPack 6.2 (Jetson) membawa Python 3.10 secara *native*. Dev di laptop
-> tetap **3.12**; untuk deployment gunakan `requirements-jetson.txt` + wheel resmi NVIDIA (jp6),
-> **bukan** PyPI, atau container/conda yang disesuaikan ke 3.10 di perangkat.
+> **Catatan board edge:** JetPack 6.2.1 (Jetson, Ubuntu 22.04) membawa Python 3.10 secara *native*.
+> Dev di laptop tetap **3.12**; untuk deployment gunakan `requirements-jetson.txt` + wheel resmi
+> NVIDIA untuk JetPack 6 (index `pypi.jetson-ai-lab.io/jp6/cu126`, CUDA 12.6), **bukan** PyPI biasa.
 
 ---
 
@@ -154,7 +155,7 @@ MoodIn_Software/
 │   │   ├── affectnet.md  ck-plus.md  pure.md  ubfc-rppg.md
 │   │   └── label-harmonization.md     # pemetaan label → kuadran V-A / 5 kelas
 │   ├── loaders/
-│   │   ├── __init__.py
+│   ��   ├── __init__.py
 │   │   ├── dataset_loader.py          # TensorClipDataset generik (.pt)
 │   │   ├── dataset_ubfc_loader.py     # UBFCrPPGDataset (jendela geser + PPG tersinkron)
 │   │   ├── download_ubfc_kaggle.py    # unduh dataset (kredensial via env/kaggle.json)
@@ -274,14 +275,14 @@ python inference.py
 
 ## 🚀 Deployment (Edge)
 
-> **Keputusan board belum final — tetapkan satu board kanonik.**
+> **Board edge terpilih: Jetson Orin Nano Super** (JetPack 6.2.1, boot NVMe). Pi 5 = alternatif.
 
-- **Jetson Orin Nano Super** (sedang dikirim): `deployment/export_onnx.py` →
-  `deployment/quantize_int8.py` → (inferensi TensorRT). Pakai `requirements-jetson.txt`.
-- **Raspberry Pi 5** (opsi README awal): `deployment/edge_inference_rpi5.py` + ONNX Runtime.
+- **Jetson Orin Nano Super** (utama, sudah di tangan): `deployment/export_onnx.py` →
+  `deployment/quantize_int8.py` → inferensi **TensorRT (INT8)**. Pakai `requirements-jetson.txt`
+  + wheel `jp6/cu126`. TODO: tambah `deployment/edge_inference_jetson.py` (port dari rpi5).
+- **Raspberry Pi 5** (alternatif/awal): `deployment/edge_inference_rpi5.py` + ONNX Runtime.
 
-Catat hasil pengukuran di `deployment/benchmark_latency.md`. Setelah board diputuskan,
-selaraskan bagian ini, `requirements`, dan skrip `deployment/` (mis. tambah `edge_inference_jetson.py`).
+Catat hasil pengukuran di `deployment/benchmark_latency.md`.
 
 ---
 
@@ -303,7 +304,7 @@ meng-import kode repo ini.
 
 - [x] Kunci alur fusi **VA-bridge** (regresi VA di ST-GCN, 1 argmax di fusi).
 - [ ] Konsolidasi 3 pasang berkas duplikat (lihat `docs/CONSOLIDATION.md`).
-- [ ] Putuskan board edge (Jetson vs Pi 5) lalu selaraskan `deployment/` + README.
+- [x] Putuskan board edge → **Jetson Orin Nano Super** (JetPack 6.2.1, NVMe). Sisa: tambah `deployment/edge_inference_jetson.py` + `requirements-jetson.txt`.
 - [ ] Verifikasi visual peta `landmark_map.py` (overlay 68 titik ke wajah sampel).
 - [ ] Ajukan akses **Aff-Wild2** (EULA) → ganti dataset dari baseline CK+.
 - [ ] Selaraskan `CATEGORICAL_MAP` (labels.py) vs koordinat `EMOTION_TO_VA` (lihat catatan di bawah).
