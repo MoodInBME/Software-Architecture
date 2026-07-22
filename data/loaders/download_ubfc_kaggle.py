@@ -12,23 +12,32 @@ Contoh:
     python download_ubfc_kaggle.py --path dataset
 """
 import argparse
+import subprocess
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--slug", default="malekdinarito/ubfc-rppg-dataset",
-                    help="slug dataset Kaggle 'owner/nama'")
-    ap.add_argument("--path", default="dataset", help="folder tujuan")
-    ap.add_argument("--no-unzip", action="store_true",
-                    help="jangan otomatis meng-unzip")
+    ap.add_argument("--slug", default="malekdinarito/ubfc-rppg-dataset")
+    ap.add_argument("--path", default="dataset")
+    ap.add_argument("--no-unzip", action="store_true")
     args = ap.parse_args()
 
-    from kaggle.api.kaggle_api_extended import KaggleApi
+    cmd = [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        args.slug,
+        "-p",
+        args.path,
+    ]
 
-    api = KaggleApi()
-    api.authenticate()  # membaca ~/.kaggle/kaggle.json atau env vars
-    api.dataset_download_files(args.slug, path=args.path, unzip=not args.no_unzip)
-    print(f"Selesai mengunduh {args.slug} -> {args.path}")
+    if not args.no_unzip:
+        cmd.append("--unzip")
+
+    print("Memulai download...")
+    subprocess.run(cmd, check=True)
+    print("Download selesai!")
 
 
 if __name__ == "__main__":
