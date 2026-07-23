@@ -28,17 +28,29 @@ from dataset_ubfc_loader import load_ubfc_ground_truth
 
 try:
     import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision as mp_vision
 except ImportError:
     mp = None
+
+FACE_LANDMARKER_MODEL_PATH = os.environ.get(
+    "FACE_LANDMARKER_MODEL_PATH", "/content/face_landmarker.task"
+)
 
 
 def _facemesh():
     if mp is None:
-        raise ImportError("mediapipe belum terpasang: pip install mediapipe==0.10.14")
-    return mp.solutions.face_mesh.FaceMesh(
-        static_image_mode=False, max_num_faces=1, refine_landmarks=False,
-        min_detection_confidence=0.5, min_tracking_confidence=0.5,
-    )
+        raise ImportError("mediapipe belum terpasang: pip install mediapipe")
+    if not os.path.isfile(FACE_LANDMARKER_MODEL_PATH):
+        raise FileNotFoundError(
+            f"Model {FACE_LANDMARKER_MODEL_PATH} tidak ditemukan. Unduh dulu dengan:\n"
+            "wget -O /content/face_landmarker.task "
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
+            "face_landmarker/float16/1/face_landmarker.task"
+        )
+    base_options = mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL_PATH)
+    options = mp_vision.FaceLandmarkerOptions(base_options=base_options, num_faces=1)
+    return mp_vision.FaceLandmarker.create_from_options(options)
 
 
 def _bbox(lms, w, h, margin=0.15):
@@ -51,7 +63,7 @@ def _bbox(lms, w, h, margin=0.15):
 
 
 def process_subject(vid_path, gt_path, size=(128, 128)):
-    mesh = _facemesh()
+    detector = _facemesh()
     cap = cv2.VideoCapture(vid_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frames = []
@@ -61,11 +73,12 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
             if not ret:
                 break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res = mesh.process(rgb)
-            if not res.multi_face_landmarks:
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            res = detector.detect(mp_image)
+            if not res.face_landmarks:
                 continue
             h, w = rgb.shape[:2]
-            x0, y0, x1, y1 = _bbox(res.multi_face_landmarks[0].landmark, w, h)
+            x0, y0, x1, y1 = _bbox(res.face_landmarks[0], w, h)
             crop = rgb[y0:y1, x0:x1]
             if crop.size == 0:
                 continue
@@ -73,7 +86,7 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
             frames.append(crop)
     finally:
         cap.release()
-        mesh.close()
+        detector.close()
 
     if len(frames) == 0:
         return None
