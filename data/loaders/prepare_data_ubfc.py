@@ -19,6 +19,7 @@ import argparse
 import tempfile
 import zipfile
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import cv2
@@ -94,6 +95,46 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
     }
 
 
+def _process_one_subject(job):
+    """Dijalankan di proses worker terpisah. Membuka zip sendiri (ZipFile
+    tidak aman dipakai bersama antar-proses), ekstrak subjek ini saja,
+    proses, simpan .pt, lalu hapus file sementara."""
+    dataset_zip, name, dirname, video_name, gt_name, output_dir = job
+    try:
+        with zipfile.ZipFile(dataset_zip, "r") as zf:
+            with tempfile.TemporaryDirectory() as tmp:
+                vid_tmp = os.path.join(tmp, video_name)
+                gt_tmp = os.path.join(tmp, gt_name)
+                with zf.open(f"{dirname}/{video_name}") as src, open(vid_tmp, "wb") as dst:
+                    dst.write(src.read())
+                with zf.open(f"{dirname}/{gt_name}") as src, open(gt_tmp, "wb") as dst:
+                    dst.write(src.read())
+                sample = process_subject(vid_tmp, gt_tmp)
+
+        if sample is None:
+            return (name, "dilewati (wajah tak terdeteksi)")
+
+        sample["subject"] = name
+        torch.save(sample, os.path.join(output_dir, f"{name}.pt"))
+        return (name, "ok")
+    except Exception as e:  # tetap lanjutkan subjek lain kalau satu gagal
+        return (name, f"error: {e}")
+
+
+def _zip_and_download(output_dir):
+    """Kompres output_dir ke .zip, lalu trigger download (kalau di Colab)."""
+    import shutil
+    zip_base = output_dir.rstrip("/\\") + "_pt"
+    zip_path = shutil.make_archive(zip_base, "zip", output_dir)
+    print(f"Hasil dikompres ke: {zip_path}")
+    try:
+        from google.colab import files  # hanya ada di lingkungan Colab
+        files.download(zip_path)
+        print("Download otomatis dimulai (cek pop-up/download browser Anda).")
+    except ImportError:
+        print("Bukan lingkungan Colab -> unduh manual dari path di atas.")
+
+
 def _find_subjects_in_zip(zf, video_name, gt_name):
     """Kelompokkan entry zip berdasarkan folder subjek yang berisi
     video_name DAN gt_name sekaligus."""
@@ -121,42 +162,43 @@ def main():
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--video_name", default="vid.avi")
     ap.add_argument("--gt_name", default="ground_truth.txt")
+    ap.add_argument("--workers", type=int, default=0,
+                     help="jumlah proses paralel (default: 0 = pakai semua core CPU)")
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     with zipfile.ZipFile(args.dataset_zip, "r") as zf:
         subjects = _find_subjects_in_zip(zf, args.video_name, args.gt_name)
-        print(f"Ditemukan {len(subjects)} subjek di dalam zip.")
-        if len(subjects) == 0:
-            # bantu debug: tampilkan beberapa entry pertama di zip
+
+    print(f"Ditemukan {len(subjects)} subjek di dalam zip.")
+    if len(subjects) == 0:
+        with zipfile.ZipFile(args.dataset_zip, "r") as zf:
             print("Contoh isi zip (20 entry pertama):")
             for n in zf.namelist()[:20]:
                 print(" ", n)
-            return
+        return
 
-        saved = 0
-        for name, dirname in sorted(subjects.items()):
-            print(f"Memproses {name} ...")
-            with tempfile.TemporaryDirectory() as tmp:
-                vid_tmp = os.path.join(tmp, args.video_name)
-                gt_tmp = os.path.join(tmp, args.gt_name)
-                with zf.open(f"{dirname}/{args.video_name}") as src, open(vid_tmp, "wb") as dst:
-                    dst.write(src.read())
-                with zf.open(f"{dirname}/{args.gt_name}") as src, open(gt_tmp, "wb") as dst:
-                    dst.write(src.read())
+    workers = args.workers or os.cpu_count() or 1
+    print(f"Memproses dengan {workers} proses paralel...")
 
-                sample = process_subject(vid_tmp, gt_tmp)
-                # vid_tmp dan gt_tmp otomatis terhapus saat blok `with` selesai
+    jobs = [
+        (args.dataset_zip, name, dirname, args.video_name, args.gt_name, args.output_dir)
+        for name, dirname in sorted(subjects.items())
+    ]
 
-            if sample is None:
-                print(f"  dilewati (wajah tak terdeteksi): {name}")
-                continue
-            sample["subject"] = name
-            torch.save(sample, os.path.join(args.output_dir, f"{name}.pt"))
-            saved += 1
+    saved = 0
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(_process_one_subject, job): job[1] for job in jobs}
+        for fut in as_completed(futures):
+            name = futures[fut]
+            result_name, status = fut.result()
+            print(f"  {result_name}: {status}")
+            if status == "ok":
+                saved += 1
 
     print(f"Selesai. {saved} subjek tersimpan di {args.output_dir}")
+    _zip_and_download(args.output_dir)
 
 
 if __name__ == "__main__":
