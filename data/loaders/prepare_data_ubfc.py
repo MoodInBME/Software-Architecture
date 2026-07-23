@@ -1,19 +1,24 @@
-"""Prapemrosesan UBFC-rPPG -> satu file .pt per subjek.
+"""
+Prapemrosesan UBFC-rPPG langsung dari file .zip -> satu file .pt per subjek.
+
+Berbeda dari versi folder biasa:
+- Tidak perlu unzip manual. Skrip membaca isi zip, lalu untuk tiap subjek
+  hanya mengekstrak vid.avi + ground_truth.txt ke folder sementara
+  (tempfile), memprosesnya, lalu menghapus file sementara itu.
+- Struktur di dalam zip diasumsikan: <root>/<subject>/vid.avi
+  dan <root>/<subject>/ground_truth.txt (root boleh ada atau tidak,
+  skrip mendeteksi otomatis berdasarkan lokasi vid.avi).
 
 Menyimpan dict:
     {"video": Tensor(C,T,H,W) float32 [0,1],
-     "ppg":   Tensor(T,)  (gelombang PPG diresample ke jumlah frame wajah),
+     "ppg":   Tensor(T,),
      "hr_mean": float, "fps": float, "subject": str}
-
-Perbaikan dari versi awal (lihat docs/CODE_REVIEW_data_layer.md):
-- MENYIMPAN ground-truth PPG (versi lama hanya menyimpan tensor video dummy).
-- Deteksi + crop wajah nyata via MediaPipe (bukan torch.randn).
-- Path via argumen CLI (bukan hardcode /content/...). Tanpa token.
-- Nama file aman (tidak memakai split('.')[0]).
 """
 import os
-import glob
 import argparse
+import tempfile
+import zipfile
+from collections import defaultdict
 
 import numpy as np
 import cv2
@@ -76,7 +81,6 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
     video = np.transpose(np.asarray(frames), (3, 0, 1, 2))  # (C,T,H,W)
     n_frames = video.shape[1]
     ppg, hr, _ = load_ubfc_ground_truth(gt_path)
-    # resample PPG agar panjangnya sama dengan jumlah frame wajah tersimpan
     ppg_rs = np.interp(
         np.linspace(0, len(ppg) - 1, n_frames), np.arange(len(ppg)), ppg
     ).astype(np.float32)
@@ -88,35 +92,68 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
     }
 
 
+def _find_subjects_in_zip(zf, video_name, gt_name):
+    """Kelompokkan entry zip berdasarkan folder subjek yang berisi
+    video_name DAN gt_name sekaligus."""
+    by_dir = defaultdict(set)
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        dirname = os.path.dirname(info.filename)
+        base = os.path.basename(info.filename)
+        if base in (video_name, gt_name):
+            by_dir[dirname].add(base)
+
+    subjects = {}
+    for dirname, files in by_dir.items():
+        if video_name in files and gt_name in files:
+            subject_name = os.path.basename(dirname.rstrip("/")) or dirname
+            subjects[subject_name] = dirname
+    return subjects  # {subject_name: dir_path_inside_zip}
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset_dir", required=True,
-                    help="folder berisi subjectN/{vid.avi,ground_truth.txt}")
+    ap.add_argument("--dataset_zip", required=True,
+                    help="path ke file .zip dataset UBFC-rPPG")
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--video_name", default="vid.avi")
     ap.add_argument("--gt_name", default="ground_truth.txt")
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
-    subjects = sorted(glob.glob(os.path.join(args.dataset_dir, "*")))
-    saved = 0
-    for sub in subjects:
-        name = os.path.basename(os.path.normpath(sub))
-        vid = os.path.join(sub, args.video_name)
-        gt = os.path.join(sub, args.gt_name)
-        if not (os.path.isfile(vid) and os.path.isfile(gt)):
-            print(f"  dilewati (file tidak ditemukan): {name} "
-              f"(vid_ada={os.path.isfile(vid)}, gt_ada={os.path.isfile(gt)})")
-            continue
-        name = os.path.basename(os.path.normpath(sub))
-        print(f"Memproses {name} ...")
-        sample = process_subject(vid, gt)
-        if sample is None:
-            print(f"  dilewati (wajah tak terdeteksi): {name}")
-            continue
-        sample["subject"] = name
-        torch.save(sample, os.path.join(args.output_dir, f"{name}.pt"))
-        saved += 1
+
+    with zipfile.ZipFile(args.dataset_zip, "r") as zf:
+        subjects = _find_subjects_in_zip(zf, args.video_name, args.gt_name)
+        print(f"Ditemukan {len(subjects)} subjek di dalam zip.")
+        if len(subjects) == 0:
+            # bantu debug: tampilkan beberapa entry pertama di zip
+            print("Contoh isi zip (20 entry pertama):")
+            for n in zf.namelist()[:20]:
+                print(" ", n)
+            return
+
+        saved = 0
+        for name, dirname in sorted(subjects.items()):
+            print(f"Memproses {name} ...")
+            with tempfile.TemporaryDirectory() as tmp:
+                vid_tmp = os.path.join(tmp, args.video_name)
+                gt_tmp = os.path.join(tmp, args.gt_name)
+                with zf.open(f"{dirname}/{args.video_name}") as src, open(vid_tmp, "wb") as dst:
+                    dst.write(src.read())
+                with zf.open(f"{dirname}/{args.gt_name}") as src, open(gt_tmp, "wb") as dst:
+                    dst.write(src.read())
+
+                sample = process_subject(vid_tmp, gt_tmp)
+                # vid_tmp dan gt_tmp otomatis terhapus saat blok `with` selesai
+
+            if sample is None:
+                print(f"  dilewati (wajah tak terdeteksi): {name}")
+                continue
+            sample["subject"] = name
+            torch.save(sample, os.path.join(args.output_dir, f"{name}.pt"))
+            saved += 1
+
     print(f"Selesai. {saved} subjek tersimpan di {args.output_dir}")
 
 
