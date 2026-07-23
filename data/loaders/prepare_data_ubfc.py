@@ -24,6 +24,11 @@ import numpy as np
 import cv2
 import torch
 
+# Batasi thread OpenCV: mencegah OpenCV dan thread pool internal
+# TFLite/XNNPACK (dipakai MediaPipe) berebut resource, yang bisa
+# memicu crash heap native ("malloc_consolidate: invalid chunk size").
+cv2.setNumThreads(1)
+
 from dataset_ubfc_loader import load_ubfc_ground_truth
 
 try:
@@ -49,7 +54,11 @@ def _facemesh():
             "face_landmarker/float16/1/face_landmarker.task"
         )
     base_options = mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL_PATH)
-    options = mp_vision.FaceLandmarkerOptions(base_options=base_options, num_faces=1)
+    options = mp_vision.FaceLandmarkerOptions(
+        base_options=base_options,
+        running_mode=mp_vision.RunningMode.VIDEO,
+        num_faces=1,
+    )
     return mp_vision.FaceLandmarker.create_from_options(options)
 
 
@@ -66,7 +75,9 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
     detector = _facemesh()
     cap = cv2.VideoCapture(vid_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    frame_interval_ms = 1000.0 / fps
     frames = []
+    frame_idx = 0
     try:
         while cap.isOpened():
             ret, frame = cap.read()
@@ -74,7 +85,9 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
                 break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            res = detector.detect(mp_image)
+            timestamp_ms = int(frame_idx * frame_interval_ms)
+            res = detector.detect_for_video(mp_image, timestamp_ms)
+            frame_idx += 1
             if not res.face_landmarks:
                 continue
             h, w = rgb.shape[:2]
