@@ -162,7 +162,7 @@ def main():
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--video_name", default="vid.avi")
     ap.add_argument("--gt_name", default="ground_truth.txt")
-    ap.add_argument("--workers", type=int, default=0,
+    ap.add_argument("--workers", type=int, default=4,
                      help="jumlah proses paralel (default: 0 = pakai semua core CPU)")
     args = ap.parse_args()
 
