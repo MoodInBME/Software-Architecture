@@ -24,74 +24,51 @@ import numpy as np
 import cv2
 import torch
 
-# Batasi thread OpenCV: mencegah OpenCV dan thread pool internal
-# TFLite/XNNPACK (dipakai MediaPipe) berebut resource, yang bisa
-# memicu crash heap native ("malloc_consolidate: invalid chunk size").
-cv2.setNumThreads(1)
-
 from dataset_ubfc_loader import load_ubfc_ground_truth
 
-try:
-    import mediapipe as mp
-    from mediapipe.tasks import python as mp_python
-    from mediapipe.tasks.python import vision as mp_vision
-except ImportError:
-    mp = None
-
-FACE_LANDMARKER_MODEL_PATH = os.environ.get(
-    "FACE_LANDMARKER_MODEL_PATH", "/content/face_landmarker.task"
-)
+# Deteksi wajah via cv2 Haar Cascade (bawaan opencv-python, tanpa
+# dependency protobuf/mediapipe yang bermasalah di environment ini).
+_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 
 
-def _facemesh():
-    if mp is None:
-        raise ImportError("mediapipe belum terpasang: pip install mediapipe")
-    if not os.path.isfile(FACE_LANDMARKER_MODEL_PATH):
-        raise FileNotFoundError(
-            f"Model {FACE_LANDMARKER_MODEL_PATH} tidak ditemukan. Unduh dulu dengan:\n"
-            "wget -O /content/face_landmarker.task "
-            "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
-            "face_landmarker/float16/1/face_landmarker.task"
-        )
-    base_options = mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL_PATH)
-    options = mp_vision.FaceLandmarkerOptions(
-        base_options=base_options,
-        running_mode=mp_vision.RunningMode.VIDEO,
-        num_faces=1,
+def _face_detector():
+    detector = cv2.CascadeClassifier(_CASCADE_PATH)
+    if detector.empty():
+        raise RuntimeError(f"Gagal memuat cascade dari {_CASCADE_PATH}")
+    return detector
+
+
+def _bbox_from_cascade(detector, gray, margin=0.15):
+    """Mengembalikan (x0,y0,x1,y1) wajah terbesar yang terdeteksi, atau None."""
+    faces = detector.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
     )
-    return mp_vision.FaceLandmarker.create_from_options(options)
-
-
-def _bbox(lms, w, h, margin=0.15):
-    xs = np.array([p.x for p in lms]) * w
-    ys = np.array([p.y for p in lms]) * h
-    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
-    mw, mh = (x1 - x0) * margin, (y1 - y0) * margin
-    return (int(max(0, x0 - mw)), int(max(0, y0 - mh)),
-            int(min(w, x1 + mw)), int(min(h, y1 + mh)))
+    if len(faces) == 0:
+        return None
+    # ambil wajah dengan area terbesar (biasanya wajah utama di depan kamera)
+    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+    h, w = gray.shape[:2]
+    mw, mh = fw * margin, fh * margin
+    return (int(max(0, x - mw)), int(max(0, y - mh)),
+            int(min(w, x + fw + mw)), int(min(h, y + fh + mh)))
 
 
 def process_subject(vid_path, gt_path, size=(128, 128)):
-    detector = _facemesh()
+    detector = _face_detector()
     cap = cv2.VideoCapture(vid_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    frame_interval_ms = 1000.0 / fps
     frames = []
-    frame_idx = 0
     try:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            timestamp_ms = int(frame_idx * frame_interval_ms)
-            res = detector.detect_for_video(mp_image, timestamp_ms)
-            frame_idx += 1
-            if not res.face_landmarks:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            bbox = _bbox_from_cascade(detector, gray)
+            if bbox is None:
                 continue
-            h, w = rgb.shape[:2]
-            x0, y0, x1, y1 = _bbox(res.face_landmarks[0], w, h)
+            x0, y0, x1, y1 = bbox
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             crop = rgb[y0:y1, x0:x1]
             if crop.size == 0:
                 continue
@@ -99,7 +76,6 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
             frames.append(crop)
     finally:
         cap.release()
-        detector.close()
 
     if len(frames) == 0:
         return None
