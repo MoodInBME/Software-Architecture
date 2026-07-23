@@ -101,9 +101,12 @@ def main():
     subjects = sorted(glob.glob(os.path.join(args.dataset_dir, "*")))
     saved = 0
     for sub in subjects:
+        name = os.path.basename(os.path.normpath(sub))
         vid = os.path.join(sub, args.video_name)
         gt = os.path.join(sub, args.gt_name)
         if not (os.path.isfile(vid) and os.path.isfile(gt)):
+            print(f"  dilewati (file tidak ditemukan): {name} "
+              f"(vid_ada={os.path.isfile(vid)}, gt_ada={os.path.isfile(gt)})")
             continue
         name = os.path.basename(os.path.normpath(sub))
         print(f"Memproses {name} ...")
