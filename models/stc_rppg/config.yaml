@@ -23,7 +23,7 @@ training:
   optimizer: adadelta # sesuai paper
   lr: 1.0
   lambda_weight: 0.5 # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
-  grad_clip_norm: null # isi angka (mis. 1.0) kalau training tidak stabil
+  grad_clip_norm: 1.0 # isi angka (mis. 1.0) kalau training tidak stabil
   device: "cuda" # ganti "cpu" kalau tidak ada GPU
   checkpoint_dir: "checkpoints"
   save_every: 5 # simpan checkpoint tiap N epoch
