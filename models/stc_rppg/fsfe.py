@@ -7,12 +7,12 @@ class CBD3DBlock(nn.Module):
         super(CBD3DBlock, self).__init__()
         self.conv3d = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)
         self.bn = nn.BatchNorm3d(out_channels)
-        self.ditac_mock = DiTAC(a=-3.0, b=3.0)
+        self.ditac = DiTAC(a=-3.0, b=3.0)
 
     def forward(self, x):
         x = self.conv3d(x)
         x = self.bn(x)
-        x = self.ditac_mock(x)
+        x = self.ditac(x)
         return x
 
 class GCBlock3D(nn.Module):
@@ -30,10 +30,10 @@ class GCBlock3D(nn.Module):
         B, C, T, H, W = x.size()
         context = self.context_modeling(x).view(B, 1, -1)
         context = torch.softmax(context, dim=-1)
-        
+
         x_flat = x.view(B, C, -1)
         pool = torch.bmm(x_flat, context.transpose(1, 2)).unsqueeze(-1).unsqueeze(-1)
-        
+
         transform = self.transform(pool)
         return x + transform
 
