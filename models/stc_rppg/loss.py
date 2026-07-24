@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class STCHybridLossFixed(nn.Module):
+class STCHybridLoss(nn.Module):
     def __init__(self, lambda_weight=0.5, fps=30.0, low=0.7, high=3.5):
         super().__init__()
         self.lambda_weight = lambda_weight
