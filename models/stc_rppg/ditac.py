@@ -30,7 +30,8 @@ class DiTAC(nn.Module):
             
             
             theta = torch.cumsum(torch.softmax(self.theta_raw, dim=0), dim=0)
-            theta = theta / theta[-1].clamp_min(1e-8)   
+            theta = theta / theta[-1].clamp_min(1e-8)
+            y0 = theta[idx]   
             y1 = theta[idx + 1]
             x0 = idx * self.step
             
