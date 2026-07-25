@@ -15,6 +15,8 @@ Kalau `stc_rppg` sudah jadi working directory Anda, bisa juga:
 """
 import os
 import sys
+import glob
+import re
 import time
 import argparse
 import importlib.util
@@ -51,6 +53,18 @@ def load_module_from_path(module_name, file_path):
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def find_latest_checkpoint(ckpt_dir):
+    """Cari epoch_XXX.pt dengan nomor epoch terbesar di ckpt_dir.
+    Kembalikan None kalau tidak ada checkpoint sama sekali."""
+    candidates = glob.glob(os.path.join(ckpt_dir, "epoch_*.pt"))
+    if not candidates:
+        return None
+    def epoch_num(path):
+        m = re.search(r"epoch_(\d+)\.pt$", os.path.basename(path))
+        return int(m.group(1)) if m else -1
+    return max(candidates, key=epoch_num)
 
 
 def set_seed(seed):
@@ -180,6 +194,10 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip_norm,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=os.path.join(os.path.dirname(__file__), "config.yaml"))
+    ap.add_argument("--resume", default=None,
+                     help="Path checkpoint spesifik, atau 'auto' untuk otomatis "
+                          "melanjutkan dari epoch_XXX.pt terbesar di checkpoint_dir. "
+                          "Override nilai training.resume di config.yaml kalau diisi.")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -243,12 +261,46 @@ def main():
     grad_clip_norm = cfg["training"].get("grad_clip_norm")
 
     best_hr_mae = float("inf")
+    start_epoch = 1
     history = []
 
-    print(f"\nMulai training: {epochs} epoch, optimizer={cfg['training'].get('optimizer')}, "
+    # --- Resume dari checkpoint (kalau diminta) ---
+    resume_arg = args.resume if args.resume is not None else cfg["training"].get("resume")
+    if resume_arg:
+        resume_path = resume_arg
+        if resume_arg == "auto":
+            resume_path = find_latest_checkpoint(ckpt_dir)
+            if resume_path is None:
+                print(f"resume='auto' tapi tidak ada checkpoint di {ckpt_dir} -> mulai dari awal.")
+
+        if resume_path and os.path.exists(resume_path):
+            print(f"Melanjutkan dari checkpoint: {resume_path}")
+            checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
+            model.load_state_dict(checkpoint["model_state"])
+            if "optimizer_state" in checkpoint and checkpoint["optimizer_state"] is not None:
+                optimizer.load_state_dict(checkpoint["optimizer_state"])
+            start_epoch = checkpoint.get("epoch", 0) + 1
+            best_hr_mae = checkpoint.get(
+                "best_hr_mae",
+                checkpoint.get("val_stats", {}).get("hr_mae", float("inf")),
+            )
+            print(f"  Lanjut dari epoch {start_epoch}, best_hr_mae sejauh ini: "
+                  f"{best_hr_mae:.2f} bpm")
+        elif resume_path:
+            print(f"Peringatan: resume diminta tapi file tidak ditemukan: "
+                  f"{resume_path} -> mulai training dari awal (epoch 1).")
+
+    if start_epoch > epochs:
+        print(f"start_epoch ({start_epoch}) sudah melebihi total epochs ({epochs}) "
+              f"di config -> tidak ada yang perlu dilatih lagi. Naikkan 'training.epochs' "
+              f"kalau ingin melanjutkan training lebih jauh.")
+        return history
+
+    print(f"\nMulai training: epoch {start_epoch}-{epochs}, "
+          f"optimizer={cfg['training'].get('optimizer')}, "
           f"lr={cfg['training']['lr']}, lambda={cfg['training'].get('lambda_weight')}\n")
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, epochs + 1):
         t0 = time.time()
         train_stats = train_one_epoch(
             model, train_loader, criterion, optimizer, device,
@@ -267,6 +319,21 @@ def main():
                          **{f"val_{k}": v for k, v in val_stats.items()}})
 
         # simpan checkpoint berkala
+        # simpan model terbaik berdasar HR MAE di test set (dicek dulu sebelum
+        # checkpoint berkala, supaya best_hr_mae yang tersimpan selalu terbaru)
+        if val_stats["hr_mae"] < best_hr_mae:
+            best_hr_mae = val_stats["hr_mae"]
+            best_path = os.path.join(ckpt_dir, "best.pt")
+            torch.save({
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "config": cfg,
+                "val_stats": val_stats,
+                "best_hr_mae": best_hr_mae,
+            }, best_path)
+            print(f"  Model terbaik baru (HR MAE={best_hr_mae:.2f} bpm) -> {best_path}")
+
         if epoch % save_every == 0 or epoch == epochs:
             ckpt_path = os.path.join(ckpt_dir, f"epoch_{epoch:03d}.pt")
             torch.save({
@@ -275,20 +342,9 @@ def main():
                 "optimizer_state": optimizer.state_dict(),
                 "config": cfg,
                 "val_stats": val_stats,
+                "best_hr_mae": best_hr_mae,
             }, ckpt_path)
             print(f"  Checkpoint disimpan: {ckpt_path}")
-
-        # simpan model terbaik berdasar HR MAE di test set
-        if val_stats["hr_mae"] < best_hr_mae:
-            best_hr_mae = val_stats["hr_mae"]
-            best_path = os.path.join(ckpt_dir, "best.pt")
-            torch.save({
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "config": cfg,
-                "val_stats": val_stats,
-            }, best_path)
-            print(f"  Model terbaik baru (HR MAE={best_hr_mae:.2f} bpm) -> {best_path}")
 
     print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
     return history
