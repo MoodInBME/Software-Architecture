@@ -26,9 +26,24 @@ import yaml
 import torch
 from torch.utils.data import DataLoader
 
-from .model import STCrPPG
-from .loss import STCHybridLoss
-from .postprocessing import rPPGProcessor
+try:
+    # Mode normal: dijalankan sebagai modul package, mis.
+    # `python -m stc_rppg.train` dari folder induk stc_rppg.
+    from .model import STCrPPG
+    from .loss import STCHybridLoss
+    from .postprocessing import rPPGProcessor
+except ImportError:
+    # Fallback: dijalankan langsung sebagai script, mis. `python train.py`
+    # atau `!python train.py` di Colab -> relative import gagal karena
+    # Python tidak tahu train.py ini bagian dari package `stc_rppg`.
+    # Solusinya: tambahkan folder INDUK dari stc_rppg/ ke sys.path, lalu
+    # import stc_rppg sebagai package biasa.
+    _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _parent_dir not in sys.path:
+        sys.path.insert(0, _parent_dir)
+    from stc_rppg.model import STCrPPG
+    from stc_rppg.loss import STCHybridLoss
+    from stc_rppg.postprocessing import rPPGProcessor
 
 
 def load_config(path):
@@ -110,7 +125,7 @@ def make_dataloader(loader_mod, cfg, subject_ids, shuffle):
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, processor, device):
+def evaluate(model, loader, criterion, processor, device, use_amp=False):
     """Kembalikan dict berisi loss rata-rata dan MAE/RMSE HR (bpm).
 
     HR dihitung dari sinyal prediksi vs sinyal target (keduanya sudah
@@ -126,16 +141,17 @@ def evaluate(model, loader, criterion, processor, device):
         vclip = vclip.to(device, non_blocking=True)
         pclip = pclip.to(device, non_blocking=True)
 
-        pred = model(vclip)
-        loss, loss_time, loss_freq = criterion(pred, pclip)
+        with torch.autocast(device_type=device.type, enabled=use_amp):
+            pred = model(vclip)
+            loss, loss_time, loss_freq = criterion(pred, pclip)
 
         total_loss += loss.item()
         total_time += loss_time.item()
         total_freq += loss_freq.item()
         n_batches += 1
 
-        pred_np = pred.detach().cpu().numpy()
-        gt_np = pclip.detach().cpu().numpy()
+        pred_np = pred.detach().float().cpu().numpy()
+        gt_np = pclip.detach().float().cpu().numpy()
         for b in range(pred_np.shape[0]):
             pred_filt = processor.filter_signal(pred_np[b])
             gt_filt = processor.filter_signal(gt_np[b])
@@ -153,24 +169,35 @@ def evaluate(model, loader, criterion, processor, device):
     }
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip_norm, log_every, epoch):
+def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip_norm,
+                     log_every, epoch, scaler=None):
     model.train()
     running_loss, running_time, running_freq = 0.0, 0.0, 0.0
     t0 = time.time()
+    use_amp = scaler is not None and scaler.is_enabled()
 
     for step, (vclip, pclip) in enumerate(loader):
         vclip = vclip.to(device, non_blocking=True)
         pclip = pclip.to(device, non_blocking=True)
 
         optimizer.zero_grad()
-        pred = model(vclip)
-        loss, loss_time, loss_freq = criterion(pred, pclip)
-        loss.backward()
 
-        if grad_clip_norm:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+        with torch.autocast(device_type=device.type, enabled=use_amp):
+            pred = model(vclip)
+            loss, loss_time, loss_freq = criterion(pred, pclip)
 
-        optimizer.step()
+        if use_amp:
+            scaler.scale(loss).backward()
+            if grad_clip_norm:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            if grad_clip_norm:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+            optimizer.step()
 
         running_loss += loss.item()
         running_time += loss_time.item()
@@ -243,6 +270,11 @@ def main():
 
     optimizer = build_optimizer(model, cfg)
 
+    use_amp = cfg["training"].get("mixed_precision", False) and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    if use_amp:
+        print("Mixed precision (AMP) aktif -> mengurangi pemakaian VRAM secara signifikan.")
+
     processor = rPPGProcessor(
         fps=cfg["postprocessing"].get("fps", 30.0),
         lowcut=cfg["postprocessing"].get("lowcut", 0.7),
@@ -304,9 +336,9 @@ def main():
         t0 = time.time()
         train_stats = train_one_epoch(
             model, train_loader, criterion, optimizer, device,
-            grad_clip_norm, log_every, epoch,
+            grad_clip_norm, log_every, epoch, scaler=scaler,
         )
-        val_stats = evaluate(model, test_loader, criterion, processor, device)
+        val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp)
         elapsed = time.time() - t0
 
         print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
