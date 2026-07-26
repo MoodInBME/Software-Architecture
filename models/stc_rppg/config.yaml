@@ -5,7 +5,7 @@ data:
   # Path relatif dari lokasi train.py (di dalam folder stc_rppg/) menuju
   # dataset_ubfc_loader.py. Sesuaikan kalau struktur folder Anda beda dari
   # Program/stc_rppg/train.py + Program/data/loaders/dataset_ubfc_loader.py
-  loader_module_path: "../data/loaders/dataset_ubfc_loader.py"
+  loader_module_path: "/content/Software-Architecture/models/data/loaders/dataset_ubfc_loader.py"
   prepared_dir: "D:/College/Gemastik/Dataset/pt_data"
   clip_len: 128          # T, paper terbaik pada UBFC-rPPG: 128 frame
   stride: 64              # overlap 50% antar klip
