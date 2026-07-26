@@ -2,13 +2,19 @@
 # (Bagian III & IV-B, "Implementation Details").
 
 data:
+  # Path relatif dari lokasi train.py (di dalam folder stc_rppg/) menuju
+  # dataset_ubfc_loader.py. Sesuaikan kalau struktur folder Anda beda dari
+  # Program/stc_rppg/train.py + Program/data/loaders/dataset_ubfc_loader.py
+  loader_module_path: "../data/loaders/dataset_ubfc_loader.py"
   prepared_dir: "D:/College/Gemastik/Dataset/pt_data"
-  clip_len: 128 # T, paper terbaik pada UBFC-rPPG: 128 frame
-  stride: 64 # overlap 50% antar klip
-  train_ratio: 0.8 # split 8:2 per-subjek
+  clip_len: 128          # T, paper terbaik pada UBFC-rPPG: 128 frame
+  stride: 64              # overlap 50% antar klip
+  train_ratio: 0.8        # split 8:2 per-subjek
   seed: 42
-  batch_size: 4
-  num_workers: 4
+  batch_size: 2            # diturunkan dari 4 -> OOM di GPU 15GB (Colab T4) walau
+                            # DiTAC sudah dioptimasi. Naikkan lagi kalau pakai GPU
+                            # >20GB (mis. A5000 seperti di paper).
+  num_workers: 2            # disamakan dgn saran Colab (CPU core terbatas di runtime gratis)
   persistent_workers: true
   pin_memory: true
 
@@ -16,27 +22,29 @@ model:
   in_channels: 3
   fsfe_out_channels: 32
   stfe_out_channels: 32
-  cdc_theta: 0.6 # koefisien central difference convolution
+  cdc_theta: 0.6          # koefisien central difference convolution
 
 training:
   epochs: 30
-  optimizer: adadelta # sesuai paper
+  optimizer: adadelta     # sesuai paper
   lr: 1.0
-  lambda_weight: 0.5 # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
-  grad_clip_norm: 1.0 # isi angka (mis. 1.0) kalau training tidak stabil
-  device: "cuda" # ganti "cpu" kalau tidak ada GPU
+  lambda_weight: 0.5      # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
+  grad_clip_norm: 1.0      # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
+  mixed_precision: true    # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)
+  device: "cuda"           # ganti "cpu" kalau tidak ada GPU
   checkpoint_dir: "checkpoints"
-  save_every: 5 # simpan checkpoint tiap N epoch
-  log_every: 20 # print log tiap N step
+  resume: "auto"           # otomatis lanjut dari checkpoint terakhir kalau ada
+  save_every: 5           # simpan checkpoint tiap N epoch
+  log_every: 20           # print log tiap N step
 
 loss:
   fps: 30.0
-  freq_low: 0.7 # Hz, batas bawah pita HR untuk loss frekuensi
-  freq_high: 3.5 # Hz, batas atas
+  freq_low: 0.7           # Hz, batas bawah pita HR untuk loss frekuensi
+  freq_high: 3.5           # Hz, batas atas
 
 postprocessing:
   fps: 30.0
-  lowcut: 0.7 # Hz, disamakan dengan loss.freq_low
-  highcut: 3.5 # Hz, disamakan dengan loss.freq_high
+  lowcut: 0.7              # Hz, disamakan dengan loss.freq_low
+  highcut: 3.5              # Hz, disamakan dengan loss.freq_high
   order: 4
   n_fft: 4096
