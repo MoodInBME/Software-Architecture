@@ -1,6 +1,6 @@
 """
-Pelatihan cabang ST-GCN (VA-bridge). Menggantikan kerangka awal dengan pipeline
-lengkap: dataset landmark ter-cache -> regresi VA (loss CCC) -> eval (CCC/F1).
+Pelatihan cabang ST-GCN (VA-bridge). Pipeline lengkap: dataset landmark
+ter-cache -> regresi VA (loss CCC) -> eval (CCC/F1).
 
 Jalankan sebagai modul dari root repo:
     python -m models.st_gcn_graph_tran.train \
@@ -9,6 +9,10 @@ Jalankan sebagai modul dari root repo:
 
 Uji cepat tanpa dataset (data acak):
     python -m models.st_gcn_graph_tran.train --sanity
+
+CATATAN (patch): impor evaluate_va dipindah ke dalam run_epoch (lazy) supaya
+mode --sanity BISA jalan walau evaluation/va_metrics.py atau paket data belum
+lengkap. Ini membuat sanity check benar-benar mandiri.
 """
 from __future__ import annotations
 
@@ -32,7 +36,6 @@ except ImportError:
 
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.st_gcn_graph_tran.losses import build_loss
-from evaluation.va_metrics import evaluate_va
 
 
 def load_config(path):
@@ -97,6 +100,9 @@ def sanity_check(cfg):
 
 
 def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None):
+    # Lazy import: hanya diperlukan saat benar-benar melatih/evaluasi (bukan --sanity).
+    from evaluation.va_metrics import evaluate_va
+
     train = optimizer is not None
     model.train(train)
     preds, tgt_va, tgt_mood, total = [], [], [], 0.0

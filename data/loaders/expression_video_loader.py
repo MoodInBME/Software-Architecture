@@ -1,65 +1,87 @@
-"""Dataset landmark ekspresi (ter-cache) -> tensor (C, T, V) + target VA.
+"""Dataset landmark ekspresi untuk cabang ST-GCN (regresi VA).
 
-Membaca manifest JSON hasil `data/preprocessing/extract_landmarks_video.py`.
-Setiap entri manifest:
-    {
-      "path": "landmarks/xxx.npy",   # array (C, T, V) float32
-      "label_type": "va" | "emotion",
-      "value": [v, a]  ATAU  "happy"   # sesuai label_type
-    }
+Membaca manifest.json hasil data/preprocessing/extract_landmarks_video.py:
+    [
+      {"file": "clips/S005_001_000.pt", "valence": 0.8, "arousal": 0.5,
+       "subject": "S005", "source": "ckplus"},
+      ...
+    ]
 
-Target selalu dikembalikan dalam ruang VA (2,) + indeks mood (untuk metrik).
+Setiap file .pt berisi dict:
+    {"landmarks": FloatTensor (C, T, V), "valence": float, "arousal": float,
+     "subject": str, "source": str}
+
+Mengembalikan per item: (x (C,T,V) float32, target_va (2,) float32, mood int64)
+-- cocok dengan iterasi di models/st_gcn_graph_tran/train.py:
+    for x, target_va, mood in loader: ...
 """
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
 
-import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from data.loaders.label_adapters import (
-    emotion_name_to_va, affwild2_va, va_to_mood_index,
-)
+try:
+    from models.st_gcn_graph_tran.labels import va_to_mood_id, NEUTRAL_RADIUS
+except Exception:  # fallback mandiri
+    NEUTRAL_RADIUS = 0.2
+
+    def va_to_mood_id(v, a, neutral_radius=NEUTRAL_RADIUS):
+        if (v * v + a * a) ** 0.5 <= neutral_radius:
+            return 4
+        if v >= 0 and a >= 0:
+            return 0
+        if v < 0 and a >= 0:
+            return 1
+        if v < 0 and a < 0:
+            return 2
+        return 3
 
 
 class ExpressionLandmarkDataset(Dataset):
-    def __init__(self, manifest_path: str, clip_len: int = 150,
-                 neutral_radius: float = 0.2, root: str | None = None):
-        self.clip_len = clip_len
-        self.neutral_radius = neutral_radius
-        self.root = Path(root) if root else Path(manifest_path).parent
-        with open(manifest_path, "r", encoding="utf-8") as f:
+    """Dataset klip landmark wajah -> (landmarks, target_va, mood_id)."""
+
+    def __init__(self, manifest, clip_len=150, neutral_radius=NEUTRAL_RADIUS, root=None):
+        with open(manifest, "r", encoding="utf-8") as f:
             self.items = json.load(f)
         if not self.items:
-            raise ValueError(f"Manifest kosong: {manifest_path}")
+            raise ValueError(f"Manifest kosong: {manifest}")
+        self.clip_len = int(clip_len)
+        self.neutral_radius = float(neutral_radius)
+        # path .pt di manifest boleh relatif terhadap folder manifest
+        self.root = root or os.path.dirname(os.path.abspath(manifest))
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.items)
 
-    def _resolve_va(self, item):
-        if item["label_type"] == "va":
-            v, a = item["value"]
-            return affwild2_va(v, a)
-        return emotion_name_to_va(str(item["value"]))
+    def _resolve(self, path):
+        return path if os.path.isabs(path) else os.path.join(self.root, path)
 
-    def _fit_clip(self, arr: np.ndarray) -> np.ndarray:
-        c, t, v = arr.shape
-        if t == self.clip_len:
-            return arr
-        if t > self.clip_len:
-            idx = np.linspace(0, t - 1, self.clip_len).round().astype(np.int64)
-            return arr[:, idx, :]
-        last = arr[:, -1:, :].repeat(self.clip_len - t, axis=1)
-        return np.concatenate([arr, last], axis=1)
+    @staticmethod
+    def _fix_len(x, length):
+        """x: (C, T, V) -> pad (edge-repeat) atau center-crop di dimensi T."""
+        t = x.shape[1]
+        if t == length:
+            return x
+        if t > length:
+            start = (t - length) // 2
+            return x[:, start:start + length, :].contiguous()
+        pad = length - t
+        last = x[:, -1:, :].repeat(1, pad, 1)
+        return torch.cat([x, last], dim=1).contiguous()
 
-    def __getitem__(self, i: int):
-        item = self.items[i]
-        arr = np.load(self.root / item["path"]).astype(np.float32)  # (C, T, V)
-        arr = self._fit_clip(arr)
-        x = torch.from_numpy(arr)
-        v, a = self._resolve_va(item)
+    def __getitem__(self, idx):
+        it = self.items[idx]
+        data = torch.load(self._resolve(it["file"]), map_location="cpu", weights_only=True)
+        x = data["landmarks"].float()
+        # Toleransi tata-letak: kalau tersimpan sebagai (T, V, C) -> jadikan (C, T, V)
+        if x.dim() == 3 and x.shape[0] not in (2, 3) and x.shape[-1] in (2, 3):
+            x = x.permute(2, 0, 1).contiguous()
+        x = self._fix_len(x, self.clip_len)
+        v = float(it.get("valence", data.get("valence", 0.0)))
+        a = float(it.get("arousal", data.get("arousal", 0.0)))
         target_va = torch.tensor([v, a], dtype=torch.float32)
-        mood = va_to_mood_index(v, a, self.neutral_radius)
+        mood = torch.tensor(va_to_mood_id(v, a, self.neutral_radius), dtype=torch.long)
         return x, target_va, mood
