@@ -283,7 +283,7 @@ def main():
     )
 
     # --- Checkpoint dir ---
-    ckpt_dir = cfg["training"].get("checkpoint_dir", "checkpoints")
+    ckpt_dir = cfg["training"].get("checkpoint_dir")
     ckpt_dir = os.path.join(os.path.dirname(__file__), ckpt_dir)
     os.makedirs(ckpt_dir, exist_ok=True)
 
