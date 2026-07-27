@@ -34,8 +34,8 @@ training:
   device: "cuda"           # ganti "cpu" kalau tidak ada GPU
   checkpoint_dir: "/content/checkpoints"
   resume: "auto"           # otomatis lanjut dari checkpoint terakhir kalau ada
-  save_every: 5           # simpan checkpoint tiap N epoch
-  log_every: 20           # print log tiap N step
+  save_every: 1           # simpan checkpoint tiap N epoch
+  log_every: 5           # print log tiap N step
 
 loss:
   fps: 30.0
