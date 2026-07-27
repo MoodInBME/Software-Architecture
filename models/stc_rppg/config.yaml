@@ -6,7 +6,7 @@ data:
   # dataset_ubfc_loader.py. Sesuaikan kalau struktur folder Anda beda dari
   # Program/stc_rppg/train.py + Program/data/loaders/dataset_ubfc_loader.py
   loader_module_path: "/content/Software-Architecture/models/data/loaders/dataset_ubfc_loader.py"
-  prepared_dir: "D:/College/Gemastik/Dataset/pt_data"
+  prepared_dir: "/content/pt_data"
   clip_len: 128          # T, paper terbaik pada UBFC-rPPG: 128 frame
   stride: 64              # overlap 50% antar klip
   train_ratio: 0.8        # split 8:2 per-subjek
@@ -32,7 +32,7 @@ training:
   grad_clip_norm: 1.0      # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
   mixed_precision: true    # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)
   device: "cuda"           # ganti "cpu" kalau tidak ada GPU
-  checkpoint_dir: "checkpoints"
+  checkpoint_dir: "/content/checkpoints"
   resume: "auto"           # otomatis lanjut dari checkpoint terakhir kalau ada
   save_every: 5           # simpan checkpoint tiap N epoch
   log_every: 20           # print log tiap N step
