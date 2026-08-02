@@ -27,16 +27,16 @@ model:
 
 training:
   epochs: 30
-  optimizer: adadelta # sesuai paper
-  lr: 1.0
-  lambda_weight: 0.5 # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
-  grad_clip_norm: 1.0 # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
-  mixed_precision: true # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)
-  device: "cuda" # ganti "cpu" kalau tidak ada GPU
-  checkpoint_dir: "checkpoints"
-  resume: "auto" # otomatis lanjut dari checkpoint terakhir kalau ada
-  save_every: 1 # simpan checkpoint tiap N epoch
-  log_every: 20 # print log tiap N step
+  optimizer: adadelta     # sesuai paper
+  lr: 1e-4
+  lambda_weight: 0.5      # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
+  grad_clip_norm: 1.0      # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
+  mixed_precision: true    # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)
+  device: "cuda"           # ganti "cpu" kalau tidak ada GPU
+  checkpoint_dir: "/content/checkpoints"
+  resume: "auto"           # otomatis lanjut dari checkpoint terakhir kalau ada
+  save_every: 1           # simpan checkpoint tiap N epoch
+  log_every: 5           # print log tiap N step
 
 loss:
   fps: 30.0
