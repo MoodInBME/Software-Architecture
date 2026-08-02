@@ -25,6 +25,7 @@ import numpy as np
 import yaml
 import torch
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 
 try:
     # Mode normal: dijalankan sebagai modul package, mis.
@@ -378,6 +379,27 @@ def main():
             }, ckpt_path)
             print(f"  Checkpoint disimpan: {ckpt_path}")
 
+    if len(history) > 0:
+        epochs_plt = [h["epoch"] for h in history]
+        train_loss = [h["train_loss"] for h in history]
+        val_loss = [h["val_loss"] for h in history]
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs_plt, train_loss, label='Train Loss', marker='o')
+        plt.plot(epochs_plt, val_loss, label='Validation Loss', marker='s')
+        
+        plt.title('Kurva Pembelajaran: Train vs Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        
+        # Simpan grafik sebagai gambar di folder checkpoint
+        plot_path = os.path.join(ckpt_dir, "loss_curve.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"\nGrafik loss berhasil disimpan di: {plot_path}")
+        
     print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
     return history
 
