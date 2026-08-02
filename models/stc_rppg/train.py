@@ -17,6 +17,7 @@ import os
 import sys
 import glob
 import re
+import shutil
 import time
 import argparse
 import importlib.util
@@ -25,7 +26,6 @@ import numpy as np
 import yaml
 import torch
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 
 try:
     # Mode normal: dijalankan sebagai modul package, mis.
@@ -81,6 +81,26 @@ def find_latest_checkpoint(ckpt_dir):
         m = re.search(r"epoch_(\d+)\.pt$", os.path.basename(path))
         return int(m.group(1)) if m else -1
     return max(candidates, key=epoch_num)
+
+
+def zip_checkpoints(ckpt_dir):
+    """Kompres seluruh isi ckpt_dir jadi satu .zip di folder induknya.
+
+    Berguna di Kaggle/Colab supaya tidak perlu download file .pt satu-satu
+    lewat panel Output -- cukup satu file zip. Tidak melakukan apa pun kalau
+    folder kosong (mis. training terhenti sebelum checkpoint pertama
+    tersimpan).
+    """
+    if not os.path.isdir(ckpt_dir) or not os.listdir(ckpt_dir):
+        print(f"Tidak ada isi di {ckpt_dir} untuk di-zip, dilewati.")
+        return None
+    archive_base = ckpt_dir.rstrip("/\\") + "_archive"
+    zip_path = shutil.make_archive(archive_base, "zip", ckpt_dir)
+    size_mb = os.path.getsize(zip_path) / (1024 * 1024)
+    print(f"\nCheckpoint dikompres ke: {zip_path} ({size_mb:.1f} MB)")
+    print("Download lewat panel 'Output' di sisi kanan notebook "
+          "(Kaggle) atau tab Files (Colab).")
+    return zip_path
 
 
 def set_seed(seed):
@@ -284,7 +304,7 @@ def main():
     )
 
     # --- Checkpoint dir ---
-    ckpt_dir = cfg["training"].get("checkpoint_dir")
+    ckpt_dir = cfg["training"].get("checkpoint_dir", "checkpoints")
     ckpt_dir = os.path.join(os.path.dirname(__file__), ckpt_dir)
     os.makedirs(ckpt_dir, exist_ok=True)
 
@@ -333,52 +353,6 @@ def main():
           f"optimizer={cfg['training'].get('optimizer')}, "
           f"lr={cfg['training']['lr']}, lambda={cfg['training'].get('lambda_weight')}\n")
 
-    for epoch in range(start_epoch, epochs + 1):
-        t0 = time.time()
-        train_stats = train_one_epoch(
-            model, train_loader, criterion, optimizer, device,
-            grad_clip_norm, log_every, epoch, scaler=scaler,
-        )
-        val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp)
-        elapsed = time.time() - t0
-
-        print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
-              f"train_loss={train_stats['loss']:.4f} | "
-              f"val_loss={val_stats['loss']:.4f} | "
-              f"val_HR_MAE={val_stats['hr_mae']:.2f} bpm | "
-              f"val_HR_RMSE={val_stats['hr_rmse']:.2f} bpm")
-
-        history.append({"epoch": epoch, **{f"train_{k}": v for k, v in train_stats.items()},
-                         **{f"val_{k}": v for k, v in val_stats.items()}})
-
-        # simpan checkpoint berkala
-        # simpan model terbaik berdasar HR MAE di test set (dicek dulu sebelum
-        # checkpoint berkala, supaya best_hr_mae yang tersimpan selalu terbaru)
-        if val_stats["hr_mae"] < best_hr_mae:
-            best_hr_mae = val_stats["hr_mae"]
-            best_path = os.path.join(ckpt_dir, "best.pt")
-            torch.save({
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "config": cfg,
-                "val_stats": val_stats,
-                "best_hr_mae": best_hr_mae,
-            }, best_path)
-            print(f"  Model terbaik baru (HR MAE={best_hr_mae:.2f} bpm) -> {best_path}")
-
-        if epoch % save_every == 0 or epoch == epochs:
-            ckpt_path = os.path.join(ckpt_dir, f"epoch_{epoch:03d}.pt")
-            torch.save({
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "config": cfg,
-                "val_stats": val_stats,
-                "best_hr_mae": best_hr_mae,
-            }, ckpt_path)
-            print(f"  Checkpoint disimpan: {ckpt_path}")
-
     if len(history) > 0:
         epochs_plt = [h["epoch"] for h in history]
         train_loss = [h["train_loss"] for h in history]
@@ -399,8 +373,83 @@ def main():
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"\nGrafik loss berhasil disimpan di: {plot_path}")
-        
-    print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
+
+    epoch = start_epoch - 1  # jaga-jaga: dipakai except KeyboardInterrupt kalau
+                              # interrupt terjadi sebelum loop sempat iterasi
+    zip_on_finish = cfg["training"].get("zip_checkpoints", True)
+
+    try:
+        for epoch in range(start_epoch, epochs + 1):
+            t0 = time.time()
+            train_stats = train_one_epoch(
+                model, train_loader, criterion, optimizer, device,
+                grad_clip_norm, log_every, epoch, scaler=scaler,
+            )
+            val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp)
+            elapsed = time.time() - t0
+
+            print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
+                  f"train_loss={train_stats['loss']:.4f} | "
+                  f"val_loss={val_stats['loss']:.4f} | "
+                  f"val_HR_MAE={val_stats['hr_mae']:.2f} bpm | "
+                  f"val_HR_RMSE={val_stats['hr_rmse']:.2f} bpm")
+
+            history.append({"epoch": epoch, **{f"train_{k}": v for k, v in train_stats.items()},
+                             **{f"val_{k}": v for k, v in val_stats.items()}})
+
+            # simpan model terbaik berdasar HR MAE di test set (dicek dulu sebelum
+            # checkpoint berkala, supaya best_hr_mae yang tersimpan selalu terbaru)
+            if val_stats["hr_mae"] < best_hr_mae:
+                best_hr_mae = val_stats["hr_mae"]
+                best_path = os.path.join(ckpt_dir, "best.pt")
+                torch.save({
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "config": cfg,
+                    "val_stats": val_stats,
+                    "best_hr_mae": best_hr_mae,
+                }, best_path)
+                print(f"  Model terbaik baru (HR MAE={best_hr_mae:.2f} bpm) -> {best_path}")
+
+            if epoch % save_every == 0 or epoch == epochs:
+                ckpt_path = os.path.join(ckpt_dir, f"epoch_{epoch:03d}.pt")
+                torch.save({
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "config": cfg,
+                    "val_stats": val_stats,
+                    "best_hr_mae": best_hr_mae,
+                }, ckpt_path)
+                print(f"  Checkpoint disimpan: {ckpt_path}")
+
+        print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
+        if zip_on_finish:
+            zip_checkpoints(ckpt_dir)
+
+    except KeyboardInterrupt:
+        # Simpan checkpoint darurat begitu Ctrl+C / tombol stop ditekan,
+        # sebelum proses benar-benar berhenti. `epoch` di sini adalah epoch
+        # yang SEDANG berjalan saat interrupt terjadi -- disimpan sebagai
+        # epoch-1 (belum genap selesai) supaya tidak menimpa penanda "epoch
+        # X selesai" yang sebenarnya belum tercapai, dan supaya resume
+        # nanti mengulang epoch yang terputus ini alih-alih melompatinya.
+        emergency_path = os.path.join(ckpt_dir, "interrupted.pt")
+        torch.save({
+            "epoch": max(epoch - 1, start_epoch - 1),
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "config": cfg,
+            "best_hr_mae": best_hr_mae,
+        }, emergency_path)
+        print(f"\nTraining dihentikan manual (KeyboardInterrupt). "
+              f"Checkpoint darurat disimpan: {emergency_path}\n"
+              f"Untuk lanjut, jalankan ulang dengan --resume "
+              f"{emergency_path}")
+        if zip_on_finish:
+            zip_checkpoints(ckpt_dir)
+
     return history
 
 
