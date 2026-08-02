@@ -1,4 +1,4 @@
-from .stc_rppg import STCrPPG
+from .model import STCrPPG
 from .fsfe import FSFE
 from .stfe import STFE
 from .predictor import rPPGPredictor
