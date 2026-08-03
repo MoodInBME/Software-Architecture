@@ -25,7 +25,10 @@ import numpy as np
 import cv2
 import torch
 
-from dataset_ubfc_loader import load_ubfc_ground_truth
+try:
+    from dataset_ubfc_loader import load_ubfc_ground_truth
+except ImportError:
+    from .dataset_ubfc_loader import load_ubfc_ground_truth
 
 # Deteksi wajah via cv2 Haar Cascade (bawaan opencv-python, tanpa
 # dependency protobuf/mediapipe yang bermasalah di environment ini).
@@ -59,6 +62,7 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
     cap = cv2.VideoCapture(vid_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frames = []
+    last_good_crop = np.zeros((size[1], size[0], 3), dtype=np.float32)
     try:
         while cap.isOpened():
             ret, frame = cap.read()
@@ -66,15 +70,13 @@ def process_subject(vid_path, gt_path, size=(128, 128)):
                 break
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             bbox = _bbox_from_cascade(detector, gray)
-            if bbox is None:
-                continue
-            x0, y0, x1, y1 = bbox
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            crop = rgb[y0:y1, x0:x1]
-            if crop.size == 0:
-                continue
-            crop = cv2.resize(crop, size).astype(np.float32) / 255.0
-            frames.append(crop)
+            if bbox is not None:
+                x0, y0, x1, y1 = bbox
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                crop = rgb[y0:y1, x0:x1]
+                if crop.size > 0:
+                    last_good_crop = cv2.resize(crop, size).astype(np.float32) / 255.0
+            frames.append(last_good_crop)
     finally:
         cap.release()
 

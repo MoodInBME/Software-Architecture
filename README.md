@@ -9,9 +9,9 @@
 ![python](https://img.shields.io/badge/python-3.12-blue?logo=python)
 ![status](https://img.shields.io/badge/status-WIP-yellow)
 
-**Status:** 🚧 *Work in progress* (branch `main`). Perangkat keras edge untuk CE2 = **Raspberry Pi 5**
+**Status:** 🚧 *Work in progress* (branch `main`). Perangkat keras edge untuk CE2 = **Jetson Orin Nano Super**
 (kamera Arducam IMX477, plug-and-play); unit **Jetson Orin Nano Super** sudah di tangan dan
-direncanakan sebagai peningkatan (JetPack 6.2.1, boot dari NVMe SSD) setelah pendampingan teknis
+direncanakan sebagai peningkatan (JetPack 7.2, boot dari NVMe SSD) setelah pendampingan teknis
 tersedia. Pelatihan model tetap di **laptop/Kaggle** sampai pipeline stabil.
 
 ---
@@ -72,9 +72,9 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-> **Catatan board edge:** JetPack 6.2.1 (Jetson, Ubuntu 22.04) membawa Python 3.10 secara *native*.
+> **Catatan board edge:** JetPack 7.2 (Jetson, Ubuntu 24.04) membawa Python 3.10 secara *native*.
 > Dev di laptop tetap **3.12**; untuk deployment gunakan `requirements-jetson.txt` + wheel resmi
-> NVIDIA untuk JetPack 6 (index `pypi.jetson-ai-lab.io/jp6/cu126`, CUDA 12.6), **bukan** PyPI biasa.
+> NVIDIA untuk JetPack 6 (index `pypi.jetson-ai-lab.io/jp6/cu126`, CUDA 13.2.1), **bukan** PyPI biasa.
 
 ---
 
@@ -197,7 +197,7 @@ MoodIn_Software/
 ├── deployment/
 │   ├── export_onnx.py                 # PyTorch → ONNX
 │   ├── quantize_int8.py              # kuantisasi INT8 (jalur Jetson/TensorRT)
-│   ├── edge_inference_rpi5.py        # inferensi Raspberry Pi 5
+│   ├── edge_inference_rpi5.py        # inferensi Jetson Orin Nano Super
 │   └── benchmark_latency.md
 ├── docs/
 │   ├── CODE_REVIEW_data_layer.md  CODE_REVIEW_root_files.md  CODE_REVIEW_stc_rppg.md
@@ -276,9 +276,9 @@ python inference.py
 
 ## 🚀 Deployment (Edge)
 
-> **Board edge untuk CE2: Raspberry Pi 5** (kamera IMX477 native). Jetson Orin Nano Super = rencana peningkatan (JetPack 6.2.1, boot NVMe).
+> **Board edge untuk CE2: Jetson Orin Nano Super** (kamera IMX477 native). Jetson Orin Nano Super = rencana peningkatan (JetPack 7.2, boot NVMe).
 
-- **Raspberry Pi 5** (utama untuk CE2): `deployment/edge_inference_rpi5.py` + ONNX Runtime.
+- **Jetson Orin Nano Super** (utama untuk CE2): `deployment/edge_inference_rpi5.py` + ONNX Runtime.
 - **Jetson Orin Nano Super** (rencana peningkatan, sudah di tangan): `deployment/export_onnx.py` →
   `deployment/quantize_int8.py` → inferensi **TensorRT (INT8)**. Pakai `requirements-jetson.txt`
   + wheel `jp6/cu126`. TODO: tambah `deployment/edge_inference_jetson.py` (port dari rpi5).
@@ -305,7 +305,7 @@ meng-import kode repo ini.
 
 - [x] Kunci alur fusi **VA-bridge** (regresi VA di ST-GCN, 1 argmax di fusi).
 - [ ] Konsolidasi 3 pasang berkas duplikat (lihat `docs/CONSOLIDATION.md`).
-- [x] Board edge CE2 → **Raspberry Pi 5**; **Jetson Orin Nano Super** disiapkan sebagai rencana peningkatan (JetPack 6.2.1, NVMe). Sisa: tambah `deployment/edge_inference_jetson.py` + `requirements-jetson.txt`.
+- [x] Board edge CE2 → **Jetson Orin Nano Super**; **Jetson Orin Nano Super** disiapkan sebagai rencana peningkatan (JetPack 7.2, NVMe). Sisa: tambah `deployment/edge_inference_jetson.py` + `requirements-jetson.txt`.
 - [ ] Verifikasi visual peta `landmark_map.py` (overlay 68 titik ke wajah sampel).
 - [ ] Ajukan akses **Aff-Wild2** (EULA) → ganti dataset dari baseline CK+.
 - [ ] Selaraskan `CATEGORICAL_MAP` (labels.py) vs koordinat `EMOTION_TO_VA` (lihat catatan di bawah).

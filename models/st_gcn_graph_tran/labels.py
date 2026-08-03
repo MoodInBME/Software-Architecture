@@ -40,8 +40,8 @@ def va_to_mood(valence: float, arousal: float,
 # tetapi sebaiknya ditinjau per-dataset. Lihat docs/ST-GCN-PLAN.md.
 CATEGORICAL_MAP = {
     "happy": "Ceria", "happiness": "Ceria", "joy": "Ceria", "surprise": "Ceria",
-    "fear": "Cemas", "anger": "Cemas", "angry": "Cemas",
-    "sad": "Tertekan", "sadness": "Tertekan", "disgust": "Tertekan", "contempt": "Tertekan",
+    "fear": "Cemas", "anger": "Cemas", "angry": "Cemas", "disgust": "Cemas", "contempt": "Cemas",
+    "sad": "Tertekan", "sadness": "Tertekan",
     "calm": "Rileks", "relaxed": "Rileks", "content": "Rileks",
     "neutral": "Netral",
 }

@@ -7,7 +7,7 @@ Kontrak (sesuai desain proposal Bab III & docs/ipc-contract.md):
   - Mood akhir     = SATU kali pemetaan kuadran va_to_mood(valence, arousal).
 
 Modul ini SENGAJA bebas-torch (murni numpy/python) supaya:
-  - ringan untuk dijalankan real-time di edge (Raspberry Pi 5),
+  - ringan untuk dijalankan real-time di edge (Jetson Orin Nano Super),
   - mudah diuji tanpa GPU,
   - TIDAK bergantung pada kode STC-rPPG teman Anda (hanya memakai keluaran
     HR/HRV yang sudah menjadi kontrak antar-modul).
