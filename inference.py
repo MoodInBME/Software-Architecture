@@ -1,9 +1,17 @@
 """
 MoodIn - Edge Inference Orchestrator (Jetson Orin Nano Super)
 
-Menjalankan pipeline end-to-end secara real-time:
-Kamera -> MediaPipe FaceMesh -> Buffer Temporal ->
-[ST-GCN (Wajah) & STC-rPPG (Fisik)] -> LateFusionVABridge -> MQTT (UI/Firebase)
+Pipeline real-time:
+  Kamera (IMX477 CSI / USB) -> MediaPipe FaceMesh (468 titik, visualisasi UI)
+  -> Pemetaan iBUG-68 -> Buffer Temporal 150 frame
+  -> ST-GCN (valence, arousal wajah) + STC-rPPG (BPM, arousal fisik)
+  -> LateFusionVABridge -> MQTT publish -> UI Cermin
+
+Dirancang agar dapat langsung dijalankan sebagai demo progres 50%
+bahkan jika model masih menggunakan bobot acak (dummy weights).
+
+Fallback: jika MediaPipe tidak tersedia (umum di Jetson ARM64),
+script akan menggunakan dlib sebagai alternatif.
 """
 import cv2
 import json
@@ -11,191 +19,353 @@ import time
 import torch
 import numpy as np
 import collections
-import paho.mqtt.client as mqtt
-import mediapipe as mp
 import os
 import sys
 
-# Tambahkan root directory ke sys.path agar import lokal berjalan lancar
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.stc_rppg.model import STCrPPG
 from models.fusion.late_fusion import LateFusionVABridge
+from data.preprocessing.landmark_map import MEDIAPIPE_FACEMESH_TO_IBUG68
 
-# Konfigurasi Hardware (Jetson Orin Nano Super - IMX477)
-CAMERA_SOURCE = 0  
-MQTT_BROKER = "localhost" 
-MQTT_TOPIC = "moodin/inference/result"
+# ---- Konfigurasi ----
+CAMERA_SOURCE = 0
+MQTT_BROKER = "localhost"
+MQTT_PORT = 1883
+MQTT_TOPIC_RESULT = "moodin/inference/result"
+MQTT_TOPIC_QUALITY = "moodin/signal/quality"
+WEIGHT_STGCN = os.path.join(os.path.dirname(__file__), "weights", "dummy_stgcn.pth")
+WEIGHT_STCRPPG = os.path.join(os.path.dirname(__file__), "weights", "dummy_stcrppg.pth")
+CLIP_LEN_STGCN = 150   # frame buffer untuk ST-GCN
+CLIP_LEN_RPPG = 128    # frame buffer untuk STC-rPPG
+STRIDE = 15             # stride frame setelah satu kali inferensi
+RPPG_H, RPPG_W = 128, 128  # resolusi input STC-rPPG
+FPS_TARGET = 30
 
-# Konfigurasi Path Bobot
-WEIGHT_STGCN = "weights/dummy_stgcn.pth"
-WEIGHT_STCRPPG = "weights/dummy_stcrppg.pth"
+# ---- Inisialisasi Deteksi Wajah ----
+# Strategi: coba MediaPipe dulu. Jika gagal (ARM64 tanpa wheel),
+# fallback ke dlib. Jika dlib juga tidak ada, gunakan OpenCV Haar.
+FACE_BACKEND = None
+face_mesh = None
+face_detector_dlib = None
+landmark_predictor_dlib = None
+haar_cascade = None
 
-# Setup MediaPipe untuk visualisasi sci-fi UI
-mp_face_mesh = mp.solutions.face_mesh
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
+try:
+    import mediapipe as mp
+    mp_face_mesh = mp.solutions.face_mesh
+    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
+    face_mesh = mp_face_mesh.FaceMesh(
+        max_num_faces=1, refine_landmarks=True,
+        min_detection_confidence=0.5, min_tracking_confidence=0.5)
+    FACE_BACKEND = "mediapipe"
+    print("[FaceMesh] Backend: MediaPipe (468 landmark)")
+except ImportError:
+    print("[FaceMesh] MediaPipe tidak tersedia, mencoba dlib...")
+    try:
+        import dlib
+        face_detector_dlib = dlib.get_frontal_face_detector()
+        predictor_path = os.path.join(
+            os.path.dirname(__file__), "weights", "shape_predictor_68_face_landmarks.dat")
+        if os.path.exists(predictor_path):
+            landmark_predictor_dlib = dlib.shape_predictor(predictor_path)
+            FACE_BACKEND = "dlib"
+            print(f"[FaceMesh] Backend: dlib (68 landmark langsung)")
+        else:
+            print(f"[FaceMesh] dlib tersedia tapi prediktor tidak ditemukan di {predictor_path}")
+            raise FileNotFoundError(predictor_path)
+    except (ImportError, FileNotFoundError):
+        print("[FaceMesh] dlib juga tidak tersedia. Fallback ke OpenCV Haar (tanpa landmark).")
+        haar_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        haar_cascade = cv2.CascadeClassifier(haar_path)
+        FACE_BACKEND = "haar"
 
-def gstreamer_pipeline(capture_width=1280, capture_height=720, framerate=30):
+# ---- MQTT (opsional) ----
+mqtt_client = None
+try:
+    import paho.mqtt.client as mqtt
+    mqtt_client = mqtt.Client(client_id="Jetson_Inference")
+except ImportError:
+    print("[MQTT] paho-mqtt tidak tersedia. Melanjutkan tanpa MQTT.")
+
+
+def gstreamer_pipeline(width=1280, height=720, fps=30):
+    """Pipeline GStreamer untuk nvarguscamerasrc (Jetson CSI, IMX477)."""
     return (
         f"nvarguscamerasrc ! "
-        f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, "
-        f"format=(string)NV12, framerate=(fraction){framerate}/1 ! "
+        f"video/x-raw(memory:NVMM), width=(int){width}, height=(int){height}, "
+        f"format=(string)NV12, framerate=(fraction){fps}/1 ! "
         f"nvvidconv ! video/x-raw, format=(string)BGRx ! "
         f"videoconvert ! video/x-raw, format=(string)BGR ! appsink"
     )
 
+
+def extract_landmarks_mediapipe(frame_rgb):
+    """Ekstrak 68 iBUG landmarks dari MediaPipe FaceMesh 468."""
+    results = face_mesh.process(frame_rgb)
+    if not results.multi_face_landmarks:
+        return None, None
+    face_lm = results.multi_face_landmarks[0]
+    all_468 = np.array([[lm.x, lm.y] for lm in face_lm.landmark])  # (468, 2)
+    ibug68 = all_468[MEDIAPIPE_FACEMESH_TO_IBUG68]  # (68, 2) -- pemetaan yang benar
+    return ibug68, face_lm
+
+
+def extract_landmarks_dlib(frame_gray, frame_rgb):
+    """Ekstrak 68 iBUG landmarks langsung dari dlib."""
+    faces = face_detector_dlib(frame_gray, 0)
+    if len(faces) == 0:
+        return None
+    shape = landmark_predictor_dlib(frame_gray, faces[0])
+    h, w = frame_rgb.shape[:2]
+    coords = np.array([[shape.part(i).x / w, shape.part(i).y / h]
+                        for i in range(68)])  # (68, 2) normalized
+    return coords
+
+
+def draw_landmarks_on_frame(display_frame, face_lm_mediapipe=None, ibug68=None):
+    """Gambar landmark futuristik pada frame untuk UI demo."""
+    if FACE_BACKEND == "mediapipe" and face_lm_mediapipe is not None:
+        mp_drawing.draw_landmarks(
+            image=display_frame, landmark_list=face_lm_mediapipe,
+            connections=mp_face_mesh.FACEMESH_TESSELATION,
+            landmark_drawing_spec=None,
+            connection_drawing_spec=mp_drawing_styles
+                .get_default_face_mesh_tesselation_style())
+        mp_drawing.draw_landmarks(
+            image=display_frame, landmark_list=face_lm_mediapipe,
+            connections=mp_face_mesh.FACEMESH_CONTOURS,
+            landmark_drawing_spec=None,
+            connection_drawing_spec=mp_drawing_styles
+                .get_default_face_mesh_contours_style())
+    elif ibug68 is not None:
+        h, w = display_frame.shape[:2]
+        for (nx, ny) in ibug68:
+            px, py = int(nx * w), int(ny * h)
+            cv2.circle(display_frame, (px, py), 2, (0, 255, 0), -1)
+
+
 def main():
-    print("=== Menginisialisasi MoodIn Edge Inference ===")
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"[Device] Menggunakan: {device}")
+    print("=" * 65)
+    print(" MoodIn Edge Inference - Demo 50% ".center(65, "="))
+    print("=" * 65)
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[Device] {device}" +
+          (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
 
-    # 1. Inisialisasi Arsitektur Deep Learning
-    print("[Model] Memuat ST-GCN dan STC-rPPG...")
+    # ---- Model Init ----
+    print("[Model] Memuat ST-GCN (head_type=va)...")
     stgcn = STGCN_GraphTransformer(
-        in_channels=2, num_class=5, num_node=68, graph_strategy="spatial", 
-        max_hop=1, t_kernel=9, transformer_layers=2, transformer_heads=8, 
+        in_channels=2, num_class=5, num_node=68, graph_strategy="spatial",
+        max_hop=1, t_kernel=9, transformer_layers=2, transformer_heads=8,
         transformer_ff=512, dropout=0.3, head_type="va"
-    ).to(device)
-    stgcn.eval()
-    
-    stc_rppg = STCrPPG().to(device)
-    stc_rppg.eval()
-    
-    fusion_bridge = LateFusionVABridge(w_face_arousal=0.7, w_physio_arousal=0.3)
+    ).to(device).eval()
 
-    # 2. Muat Bobot (Gunakan dummy jika bobot asli belum dilatih)
-    if os.path.exists(WEIGHT_STGCN):
-        stgcn.load_state_dict(torch.load(WEIGHT_STGCN, map_location=device, weights_only=True))
-        print(f"[Bobot] ST-GCN dimuat dari {WEIGHT_STGCN}")
-    else:
-        print("[Bobot] WARNING: Bobot ST-GCN tidak ditemukan! Menggunakan bobot inisialisasi acak.")
+    print("[Model] Memuat STC-rPPG...")
+    stc_rppg = STCrPPG().to(device).eval()
 
-    if os.path.exists(WEIGHT_STCRPPG):
-        stc_rppg.load_state_dict(torch.load(WEIGHT_STCRPPG, map_location=device, weights_only=True))
-        print(f"[Bobot] STC-rPPG dimuat dari {WEIGHT_STCRPPG}")
-    else:
-        print("[Bobot] WARNING: Bobot STC-rPPG tidak ditemukan! Menggunakan bobot inisialisasi acak.")
+    fusion = LateFusionVABridge(
+        w_face_arousal=0.5, w_physio_arousal=0.5,
+        ema_alpha=0.3, physio_timeout_s=5.0)
 
-    # 3. Setup MQTT Publisher
-    client = mqtt.Client(client_id="Jetson_Inference")
-    try:
-        client.connect(MQTT_BROKER, 1883, 60)
-        client.loop_start()
-        print(f"[MQTT] Terhubung ke broker {MQTT_BROKER}")
-    except Exception as e:
-        print(f"[MQTT] Gagal terhubung ke broker: {e}. Melanjutkan tanpa MQTT.")
+    # ---- Muat Bobot ----
+    for name, model, path in [("ST-GCN", stgcn, WEIGHT_STGCN),
+                                ("STC-rPPG", stc_rppg, WEIGHT_STCRPPG)]:
+        if os.path.exists(path):
+            model.load_state_dict(
+                torch.load(path, map_location=device, weights_only=True))
+            print(f"[Bobot] {name} dimuat dari {os.path.basename(path)}")
+        else:
+            print(f"[Bobot] WARNING: {path} tidak ditemukan. "
+                  f"{name} menggunakan bobot inisialisasi acak.")
 
-    # 4. Inisialisasi Kamera
+    # ---- MQTT Connect ----
+    if mqtt_client is not None:
+        try:
+            mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+            mqtt_client.loop_start()
+            print(f"[MQTT] Terhubung ke {MQTT_BROKER}:{MQTT_PORT}")
+        except Exception as e:
+            print(f"[MQTT] Gagal terhubung: {e}. Melanjutkan tanpa MQTT.")
+
+    # ---- Kamera Init ----
     cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
     if not cap.isOpened():
-        print("[Kamera] Pipeline CSI gagal. Fallback ke USB Webcam lokal...")
+        print("[Kamera] GStreamer CSI gagal. Fallback ke USB webcam...")
         cap = cv2.VideoCapture(CAMERA_SOURCE)
-        
     if not cap.isOpened():
-        print("[Kamera] ERROR: Tidak ada kamera yang terdeteksi!")
+        print("[Kamera] FATAL: Tidak ada kamera terdeteksi.")
         return
 
-    # Buffer Temporal
-    buffer_stgcn = collections.deque(maxlen=150)
-    buffer_rppg = collections.deque(maxlen=128)
+    # ---- Buffers ----
+    buf_stgcn = collections.deque(maxlen=CLIP_LEN_STGCN)
+    buf_rppg = collections.deque(maxlen=CLIP_LEN_RPPG)
     
-    print("[Inference] Mulai membaca frame. Tekan 'q' pada jendela untuk keluar.")
-    
-    with mp_face_mesh.FaceMesh(
-        max_num_faces=1, refine_landmarks=True,
-        min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
-        
-        while cap.isOpened():
-            success, frame = cap.read()
-            if not success:
-                break
-                
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(frame_rgb)
-            display_frame = frame.copy()
+    # Variabel status untuk overlay UI
+    last_mood = "Menunggu..."
+    last_bpm = 0.0
+    last_confidence = 0.0
+    frame_count = 0
+
+    print(f"[Inference] Backend wajah: {FACE_BACKEND}")
+    print(f"[Inference] Tekan 'q' untuk keluar.\n")
+
+    while cap.isOpened():
+        ok, frame = cap.read()
+        if not ok:
+            break
+        frame_count += 1
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        display = frame.copy()
+
+        # ---- Ekstraksi Landmark ----
+        ibug68 = None
+        face_lm_mp = None
+        face_detected = False
+
+        if FACE_BACKEND == "mediapipe":
+            ibug68, face_lm_mp = extract_landmarks_mediapipe(frame_rgb)
+            face_detected = ibug68 is not None
+
+        elif FACE_BACKEND == "dlib":
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            ibug68 = extract_landmarks_dlib(gray, frame_rgb)
+            face_detected = ibug68 is not None
+
+        elif FACE_BACKEND == "haar":
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = haar_cascade.detectMultiScale(gray, 1.3, 5)
+            if len(faces) > 0:
+                face_detected = True
+                # Tidak ada landmark, tapi STC-rPPG tetap bisa jalan dengan ROI wajah
+
+        # ---- Gambar landmark di frame ----
+        draw_landmarks_on_frame(display, face_lm_mp, ibug68)
+
+        # ---- Isi buffer ----
+        if face_detected:
+            if ibug68 is not None:
+                buf_stgcn.append(ibug68)  # (68, 2)
             
-            if results.multi_face_landmarks:
-                for face_landmarks in results.multi_face_landmarks:
-                    mp_drawing.draw_landmarks(
-                        image=display_frame, landmark_list=face_landmarks,
-                        connections=mp_face_mesh.FACEMESH_TESSELATION,
-                        connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style())
-                    
-                    # 468 landmarks -> 68 iBUG (Mocking the mapping logic for inference speed)
-                    # Di produksi, gunakan MEDIAPIPE_TO_IBUG68 dari labels.py
-                    coords = [[lm.x, lm.y] for lm in face_landmarks.landmark[:68]] 
-                    buffer_stgcn.append(coords)
-                    
-                    # RPPG butuh RGB image (resized 128x128)
-                    resized_frame = cv2.resize(frame_rgb, (128, 128))
-                    buffer_rppg.append(resized_frame)
-            else:
-                buffer_stgcn.clear()
-                buffer_rppg.clear()
-            
-            # --- MODEL FORWARD PASS ---
-            if len(buffer_stgcn) == 150 and len(buffer_rppg) >= 128:
-                try:
-                    # Siapkan Tensor ST-GCN: (N, C, T, V) = (1, 2, 150, 68)
-                    stgcn_input = torch.tensor(buffer_stgcn, dtype=torch.float32).unsqueeze(0)
-                    stgcn_input = stgcn_input.permute(0, 3, 1, 2).to(device) # N, C, T, V
-                    
-                    # Siapkan Tensor STC-rPPG: (N, C, T, H, W) = (1, 3, 128, 128, 128)
-                    # Format yang benar untuk STCrPPG: (N, C, T, H, W)
-                    rppg_input = np.array(list(buffer_rppg)[-128:]) # Ambil 128 terakhir
-                    rppg_input = torch.tensor(rppg_input, dtype=torch.float32).unsqueeze(0)
-                    rppg_input = rppg_input.permute(0, 4, 1, 2, 3).to(device) # N, C, T, H, W
-                    
-                    with torch.no_grad():
-                        # Inference Cabang Ekspresi (Wajah)
-                        mood_logits, (val_face, aro_face) = stgcn(stgcn_input)
-                        val_face = val_face.item()
-                        aro_face = aro_face.item()
-                        
-                        # Inference Cabang Fisiologis (rPPG)
-                        # Model mengembalikan sinyal 1D sepanjang waktu (T)
-                        rppg_signal = stc_rppg(rppg_input)
-                        
-                        # Ekstraksi BPM sederhana dari sinyal FFT (Dummy logic for inference mapping)
-                        # Dalam produksi gunakan postprocessing.rPPGProcessor
-                        bpm = float(torch.mean(rppg_signal).item() * 100 + 80) 
-                        aro_physio = (bpm - 70) / 30.0 # Normalisasi kasar BPM -> Arousal
-                        
-                        # Fusi V-A Bridge
-                        fusion_result = fusion_bridge.fuse(val_face, aro_face, aro_physio)
-                        final_mood = fusion_result['mood_label']
-                    
-                    # Kirim hasil inferensi via MQTT
+            # Crop wajah untuk rPPG (resize ke 128x128)
+            resized = cv2.resize(frame_rgb, (RPPG_W, RPPG_H))
+            resized = resized.astype(np.float32) / 255.0  # normalize [0, 1]
+            buf_rppg.append(resized)
+        else:
+            buf_stgcn.clear()
+            buf_rppg.clear()
+
+        # ---- Forward Pass Model ----
+        if len(buf_stgcn) >= CLIP_LEN_STGCN and len(buf_rppg) >= CLIP_LEN_RPPG:
+            try:
+                # ST-GCN: input (N=1, C=2, T=150, V=68)
+                stgcn_np = np.array(list(buf_stgcn))       # (150, 68, 2)
+                stgcn_np = stgcn_np.transpose(2, 0, 1)     # (2, 150, 68) = (C, T, V)
+                stgcn_t = torch.tensor(stgcn_np, dtype=torch.float32)
+                stgcn_t = stgcn_t.unsqueeze(0).to(device)  # (1, 2, 150, 68)
+
+                # STC-rPPG: input (N=1, C=3, T=128, H=128, W=128)
+                rppg_np = np.array(list(buf_rppg)[-CLIP_LEN_RPPG:])  # (128, 128, 128, 3)
+                rppg_np = rppg_np.transpose(3, 0, 1, 2)              # (3, 128, 128, 128) = (C, T, H, W)
+                rppg_t = torch.tensor(rppg_np, dtype=torch.float32)
+                rppg_t = rppg_t.unsqueeze(0).to(device)              # (1, 3, 128, 128, 128)
+
+                with torch.no_grad():
+                    # ST-GCN mengembalikan dict: {"va": tensor(1, 2)}
+                    stgcn_out = stgcn(stgcn_t)
+                    va = stgcn_out["va"].squeeze(0).cpu().numpy()  # (2,)
+                    face_val, face_aro = float(va[0]), float(va[1])
+
+                    # STC-rPPG mengembalikan sinyal 1D: tensor(1, T')
+                    rppg_signal = stc_rppg(rppg_t).squeeze().cpu().numpy()
+
+                    # Estimasi BPM dari sinyal rPPG via FFT
+                    n = len(rppg_signal)
+                    if n > 1:
+                        fft_mag = np.abs(np.fft.rfft(rppg_signal))
+                        freqs = np.fft.rfftfreq(n, d=1.0 / FPS_TARGET)
+                        # Band-pass 0.7 - 3.5 Hz (42 - 210 BPM)
+                        valid = (freqs >= 0.7) & (freqs <= 3.5)
+                        if np.any(valid):
+                            peak_idx = np.argmax(fft_mag[valid])
+                            peak_freq = freqs[valid][peak_idx]
+                            bpm = peak_freq * 60.0
+                        else:
+                            bpm = 0.0
+                    else:
+                        bpm = 0.0
+
+                # Fusi menggunakan API yang benar
+                result = fusion.fuse(
+                    face_valence=face_val,
+                    face_arousal=face_aro,
+                    face_confidence=1.0,
+                    hr_bpm=bpm if bpm > 0 else None,
+                    hrv_ms=None
+                )
+
+                last_mood = result["mood_label"]
+                last_bpm = result["heart_rate_bpm"] if result["heart_rate_bpm"] else bpm
+                last_confidence = result["confidence"]
+
+                # Publish ke MQTT
+                if mqtt_client is not None:
                     payload = {
-                        "mood_label": final_mood,
-                        "valence": val_face,
-                        "arousal": fusion_result['arousal'],
-                        "heart_rate_bpm": bpm,
-                        "physio_used": True,
+                        "mood_id": result["mood_id"],
+                        "mood_label": result["mood_label"],
+                        "confidence": result["confidence"],
+                        "valence": result["valence"],
+                        "arousal": result["arousal"],
+                        "heart_rate_bpm": result["heart_rate_bpm"],
+                        "hrv_ms": result["hrv_ms"],
+                        "physio_used": result["physio_used"],
                         "timestamp": time.time()
                     }
-                    client.publish(MQTT_TOPIC, json.dumps(payload))
-                    
-                    cv2.putText(display_frame, f"Mood: {final_mood} | BPM: {bpm:.1f}", (20, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                    
-                    # Stride 15 frame agar tidak freeze
-                    for _ in range(15): 
-                        buffer_stgcn.popleft()
-                        
-                except Exception as e:
-                    print(f"[Error Inference]: {e}")
-                    buffer_stgcn.clear()
-            
-            cv2.imshow('MoodIn - Real-time Landmark (50% Progress Demo)', display_frame)
-            if cv2.waitKey(5) & 0xFF == ord('q'):
-                break
-                
+                    mqtt_client.publish(MQTT_TOPIC_RESULT, json.dumps(payload))
+
+                # Stride: buang frame lama
+                for _ in range(STRIDE):
+                    if buf_stgcn:
+                        buf_stgcn.popleft()
+
+            except Exception as e:
+                print(f"[Error] Forward pass gagal: {e}")
+                buf_stgcn.clear()
+                buf_rppg.clear()
+
+        # ---- Overlay UI ----
+        bar_h = 80
+        overlay = display.copy()
+        cv2.rectangle(overlay, (0, 0), (display.shape[1], bar_h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, display, 0.4, 0, display)
+
+        cv2.putText(display, f"Mood: {last_mood}", (20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
+        cv2.putText(display, f"BPM: {last_bpm:.0f}", (20, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
+
+        buf_pct = min(len(buf_stgcn) / CLIP_LEN_STGCN, 1.0)
+        bar_w = int(200 * buf_pct)
+        cv2.rectangle(display, (display.shape[1] - 220, 15),
+                      (display.shape[1] - 220 + bar_w, 35), (0, 255, 0), -1)
+        cv2.putText(display, f"Buffer: {len(buf_stgcn)}/{CLIP_LEN_STGCN}",
+                    (display.shape[1] - 220, 55),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+        cv2.imshow("MoodIn - Real-time Inference", display)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
     cap.release()
     cv2.destroyAllWindows()
-    client.loop_stop()
+    if mqtt_client is not None:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+    print("[Inference] Selesai.")
+
 
 if __name__ == "__main__":
     main()

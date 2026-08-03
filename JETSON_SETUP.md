@@ -1,74 +1,193 @@
 # Panduan Setup Jetson Orin Nano Super (MoodIn Edge)
 
-Panduan ini dikhususkan untuk **Jetson Orin Nano Super (8GB)** milik tim VisionaryX untuk keperluan progres 50% (Demo Real-time Landmark & UI).
-
-## 1. Lingkungan OS & JetPack
-Sesuai aturan `AGENTS.md`, Jetson Anda harus menjalankan:
-- **OS:** Ubuntu 24.04
-- **JetPack:** 7.2 (R39.2.0)
-- **Kernel:** 6.8
-- **CUDA:** 13.2.1
-
-*(Jangan gunakan OS Debian Trixie atau JetPack 6.x. Jika OS di SD Card/NVMe Anda salah, lakukan flash ulang menggunakan NVIDIA SDK Manager).*
+Target: **NVIDIA Jetson Orin Nano Super (8 GB)**, JetPack 7.2 (R39.2.0),
+Ubuntu 24.04, CUDA 13.2.1, Python 3.12.
 
 ---
 
-## 2. Instalasi Dependensi Python (Sangat Kritis)
+## 1. Prasyarat OS
 
-Di ekosistem Jetson (ARM64), **Anda tidak boleh menggunakan `pip install torch` biasa**. Menginstal versi PyPI standar akan mengunduh versi CPU-only atau versi yang tidak terhubung dengan CUDA Jetson (TensorRT), yang akan membuat model Deep Learning berjalan dengan sangat lambat.
+Pastikan Jetson sudah di-flash dengan JetPack 7.2 via NVIDIA SDK Manager.
+Verifikasi:
 
-Buka terminal di Jetson Anda dan jalankan perintah berurutan berikut:
+```bash
+cat /etc/nv_tegra_release    # Harus: R39 (release), REVISION: 2.0
+python3 --version            # Harus: 3.12.x
+nvcc --version               # Harus: CUDA 13.2
+```
 
-### Langkah A: Update Sistem
+Jika salah satu tidak sesuai, **jangan lanjutkan**. Flash ulang dulu.
+
+---
+
+## 2. Virtual Environment
+
 ```bash
 sudo apt-get update
-sudo apt-get install -y libopenblas-dev python3-pip python3-dev
-```
+sudo apt-get install -y python3-venv python3-dev libopenblas-dev \
+    libhdf5-dev libjpeg-dev zlib1g-dev libavcodec-dev libavformat-dev \
+    libswscale-dev cmake mosquitto mosquitto-clients
 
-### Langkah B: Instal PyTorch Khusus Jetson (jp72)
-NVIDIA menyediakan *wheel* (file `.whl`) PyTorch khusus untuk arsitektur Jetson.
-```bash
-# Unduh wheel PyTorch 2.3.1 untuk JetPack 7.2
-wget https://developer.download.nvidia.com/compute/redist/jp/v72/pytorch/torch-2.3.1a0+410ce96a.nv24.11-cp312-cp312-linux_aarch64.whl
-
-# Instal wheel tersebut
-pip3 install torch-2.3.1a0+410ce96a.nv24.11-cp312-cp312-linux_aarch64.whl
-```
-
-### Langkah C: Instal torchvision (Kompilasi dari Source)
-Karena *torchvision* sangat bergantung erat pada PyTorch, ia harus dikompilasi manual:
-```bash
-sudo apt-get install -y libjpeg-dev zlib1g-dev libpython3-dev libavcodec-dev libavformat-dev libswscale-dev
-git clone --branch v0.18.1 https://github.com/pytorch/vision torchvision
-cd torchvision
-export BUILD_VERSION=0.18.1
-python3 setup.py install --user
-cd ..
-```
-
-### Langkah D: Pustaka Pendukung & MediaPipe
-Kini Anda bisa menginstal dependensi sisanya via `pip` biasa. MediaPipe sudah menyediakan wheel untuk `aarch64`.
-```bash
-pip3 install mediapipe==0.10.14 opencv-python paho-mqtt numpy scikit-learn
+cd ~/MoodIn_Software   # atau di mana pun Anda clone repo ini
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 ```
 
 ---
 
-## 3. Menjalankan Demo `inference.py` (Progres 50%)
+## 3. Instalasi PyTorch (GPU, CUDA 13.2)
 
-File `inference.py` telah saya desain sedemikian rupa agar dapat langsung membaca wajah Anda dan menggambar jaring futuristik (salvion.ai) **walaupun** model aslinya belum Anda latih.
+**KRITIS: Jangan gunakan `pip install torch` tanpa `--index-url`.**
+Versi PyPI default adalah CPU-only x86_64 dan akan gagal di ARM64.
 
-### Cara Menjalankan:
-1. Hubungkan kamera (IMX477 CSI atau sekadar USB Webcam) ke Jetson.
-2. Buka terminal di dalam folder repo ini (`MoodIn_Software`).
-3. Jalankan:
-   ```bash
-   python3 inference.py
-   ```
+```bash
+pip install torch==2.12.0+cu132 --index-url https://download.pytorch.org/whl/cu132
+```
 
-### Bagaimana Script Ini Bekerja Saat Demo?
-- **Kamera Otomatis:** Script akan mencoba menggunakan kamera CSI (via pipeline GStreamer `nvarguscamerasrc`). Jika gagal (misal belum dicolok), ia akan otomatis berpindah ke kamera USB (`cv2.VideoCapture(0)`).
-- **Visualisasi MediaPipe:** Skrip ini menarik fungsi dari `mp_face_mesh` untuk mengekstrak titik-titik dan langsung merendernya (menggambarnya) ke frame video.
-- **Koneksi UI (MQTT):** Script juga mempublikasikan prediksi *mood dummy* ke broker MQTT lokal di topik `moodin/inference/result`. Jika teman Anda sudah menyiapkan UI berbasis web lokal, UI tersebut akan bereaksi secara *real-time* saat wajah terdeteksi.
+Verifikasi:
 
-*Selamat mencoba di lab! Jangan ragu untuk mencatat error yang muncul di Jetson besok, dan berikan pesan error tersebut agar kita bisa selesaikan bersama.*
+```bash
+python3 -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# Output yang diharapkan: True  Orin (atau nama GPU Jetson)
+```
+
+Jika `torch.cuda.is_available()` mengembalikan `False`, kemungkinan Anda
+menginstal wheel yang salah. Coba cari wheel alternatif di:
+- https://pypi.jetson-ai-lab.io/
+- https://developer.nvidia.com/embedded/jetpack
+
+---
+
+## 4. Instalasi torchvision (Kompilasi dari Source)
+
+Wheel `torchvision` untuk `cu132` + `aarch64` belum tentu ada di PyPI.
+Cara paling aman adalah kompilasi dari source:
+
+```bash
+git clone --branch v0.27.0 --depth 1 https://github.com/pytorch/vision.git
+cd vision
+export BUILD_VERSION=0.27.0
+python3 setup.py install
+cd ..
+rm -rf vision
+```
+
+> Catatan: proses ini memakan waktu 10-20 menit di Jetson.
+
+---
+
+## 5. MediaPipe (MUNGKIN GAGAL di ARM64)
+
+MediaPipe **tidak secara konsisten** menyediakan wheel untuk `aarch64` Linux.
+Coba dulu:
+
+```bash
+pip install mediapipe==0.10.14
+```
+
+### Jika gagal (kemungkinan besar):
+
+**Opsi A: Build dari source (memerlukan Docker + Bazel)**
+
+Ini kompleks dan memakan waktu. Lihat:
+https://developers.google.com/mediapipe/framework/getting_started/install#building_on_arm
+
+**Opsi B: Gunakan community wheel dari PINTO0309**
+
+```bash
+# Cek apakah tersedia untuk cp312 di:
+# https://github.com/PINTO0309/mediapipe-bin
+# Jika tidak ada cp312, coba cp311 dengan pyenv
+```
+
+**Opsi C (Recommended): Fallback ke dlib**
+
+`inference.py` sudah dirancang untuk fallback otomatis ke dlib jika MediaPipe
+tidak tersedia. Dlib mengekstrak 68 landmark iBUG secara langsung (tanpa
+pemetaan 468 &rarr; 68), sehingga hasilnya justru lebih presisi.
+
+```bash
+sudo apt-get install -y cmake libboost-python-dev
+pip install dlib
+```
+
+Lalu unduh model prediktor dlib:
+
+```bash
+mkdir -p weights
+wget -O weights/shape_predictor_68_face_landmarks.dat.bz2 \
+    http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
+bunzip2 weights/shape_predictor_68_face_landmarks.dat.bz2
+```
+
+**Opsi D: Tanpa landmark sama sekali**
+
+Jika MediaPipe dan dlib keduanya gagal, `inference.py` akan menggunakan
+OpenCV Haar Cascade untuk deteksi wajah saja (tanpa landmark). STC-rPPG
+masih bisa jalan (hanya butuh crop wajah), tapi ST-GCN tidak akan
+menerima data dan akan menampilkan "Menunggu...".
+
+---
+
+## 6. Dependensi Lainnya
+
+```bash
+pip install opencv-python-headless numpy paho-mqtt pyyaml scikit-learn
+```
+
+> Gunakan `opencv-python-headless` jika Jetson Anda headless (tanpa monitor).
+> Jika Anda mau menampilkan jendela OpenCV (yang diperlukan untuk demo),
+> gunakan `opencv-python` atau pastikan Jetson sudah punya display.
+
+Atau jika OpenCV sudah terinstal via JetPack (`cv2` system-level):
+
+```bash
+python3 -c "import cv2; print(cv2.__version__)"
+# Jika berhasil, tidak perlu pip install opencv-python
+```
+
+---
+
+## 7. Clone Repo dan Jalankan
+
+```bash
+git clone https://github.com/MoodInBME/Software-Architecture.git ~/MoodIn_Software
+cd ~/MoodIn_Software
+source .venv/bin/activate
+
+# Verifikasi semua file penting ada
+python3 -c "
+from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
+from models.stc_rppg.model import STCrPPG
+from models.fusion.late_fusion import LateFusionVABridge
+from data.preprocessing.landmark_map import MEDIAPIPE_FACEMESH_TO_IBUG68
+print('Semua modul berhasil diimpor.')
+"
+
+# Jalankan demo
+python3 inference.py
+```
+
+---
+
+## 8. Troubleshooting Umum Jetson
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `torch.cuda.is_available() == False` | Wheel PyTorch salah (CPU-only) | Instal ulang dengan `--index-url` |
+| `nvarguscamerasrc` error | Driver Arducam belum terinstal | Instal Arducam Jetson driver dari GitHub Arducam |
+| `cannot open shared object file: libcudnn` | cuDNN tidak terhubung ke venv | `export LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH` |
+| `Segmentation fault` saat import mediapipe | Wheel tidak kompatibel ARM64 | Gunakan dlib (Opsi C di atas) |
+| MQTT connection refused | Broker belum aktif | `sudo systemctl start mosquitto` |
+| Frame hitam dari kamera CSI | Pipeline GStreamer salah | Tes dulu: `gst-launch-1.0 nvarguscamerasrc ! nvvidconv ! videoconvert ! autovideosink` |
+| `CUDA out of memory` | Model terlalu besar untuk 8 GB | Kurangi resolusi rPPG (`RPPG_H=64, RPPG_W=64`) |
+
+---
+
+## 9. Catatan Keamanan
+
+- **Jangan pernah** meng-commit token, API key, atau kredensial ke dalam repo.
+- File `.env` yang berisi variabel sensitif harus ada di `.gitignore`.
+- Raw gambar wajah **tidak boleh keluar dari Jetson** (UU PDP No. 27/2022).
+  Hanya data numerik (mood, BPM, HRV) yang boleh dipublikasikan via MQTT.
