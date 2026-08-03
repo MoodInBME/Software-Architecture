@@ -1,37 +1,37 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
-import os
-# import FaceVideoProcessor dan STCHybridLoss di sini...
+"""
+MoodIn - Training Orchestrator (Root)
 
-class rPPGDataset(Dataset):
-    def __init__(self, data_dir):
-        # 1. Daftarkan semua path file video dan file ground-truth di sini
-        self.video_paths = [...] # List lokasi file mp4
-        self.target_paths = [...] # List lokasi file ground-truth
-        self.processor = FaceVideoProcessor()
+Sesuai aturan arsitektur (Late Fusion), cabang wajah (ST-GCN) dan cabang 
+fisiologis (STC-rPPG) dilatih secara TERPISAH karena berasal dari dua modalitas 
+dan dataset yang berbeda (CK+/Aff-Wild2 vs UBFC-rPPG).
 
-    def __len__(self):
-        # Mengembalikan total jumlah sampel data
-        return len(self.video_paths)
+Setelah bobot keduanya konvergen, tahap fusi (LateFusionVABridge) hanya bertugas
+menyelaraskan ruang arousal (w_face_arousal dan w_physio_arousal) di saat inferensi.
 
-    def __getitem__(self, idx):
-        # 2. Memuat hanya 1 video dan 1 target saat fungsi ini dipanggil
-        video_tensor = self.processor.process_video(self.video_paths[idx])
-        target_tensor = ... # Logika untuk memuat sinyal BPM dari file CSV/TXT
-        
-        return video_tensor, target_tensor
+Script ini memandu pengguna untuk mengeksekusi pipeline pelatihan yang benar.
+"""
 
-def train_model():
-    # ... (Setup model, device, dan optimizer) ...
+def main():
+    print("="*65)
+    print(" MoodIn - Training Orchestrator ".center(65, "="))
+    print("="*65)
+    print("Mengingat arsitektur Late Fusion, cabang wajah dan fisiologis")
+    print("dilatih secara independen sebelum difusi pada saat inferensi.\n")
     
-    # 3. Gunakan DataLoader untuk mengatur antrean dan Batch Size
-    # Ingat, memori GPU terbatas, atur batch_size ke 2 atau 4 pada awalnya
-    dataset = rPPGDataset(data_dir='/content/dataset_aktif/')
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2)
+    print("[1] CABANG EKSPRESI (ST-GCN Graph-Transformer)")
+    print("    Sangat disarankan melatih ini di Kaggle T4 GPU (gratis).")
+    print("    Jalankan notebook: notebooks/ck_plus_stgcn_kaggle.ipynb")
+    print("    Atau jalankan script lokal:")
+    print("    $ python -m models.st_gcn_graph_tran.train \\\n        --config models/st_gcn_graph_tran/config.yaml\n")
     
-    for epoch in range(num_epochs):
-        for batch_videos, batch_targets in dataloader:
-            batch_videos = batch_videos.to(device)
-            batch_targets = batch_targets.to(device)
-            
-            # Forward pass -> Hitung Loss -> Backward pass -> Optimizer Step
+    print("[2] CABANG FISIOLOGIS (STC-rPPG)")
+    print("    Jalankan script lokal (pastikan data UBFC sudah di-prep):")
+    print("    $ python -m models.stc_rppg.train \\\n        --config models/stc_rppg/config.yaml\n")
+    
+    print("[3] INFERENSI END-TO-END (Real-time Jetson)")
+    print("    Jika Anda ingin menguji integrasi fusi secara real-time,")
+    print("    silakan gunakan `python inference.py` dengan bobot terlatih.")
+    print("="*65)
+
+if __name__ == "__main__":
+    main()
