@@ -28,7 +28,7 @@ model:
 training:
   epochs: 30
   optimizer: adadelta # sesuai paper
-  lr: 1e-4
+  lr: 0.0001
   lambda_weight: 0.5 # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
   grad_clip_norm: 1.0 # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
   mixed_precision: true # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)
