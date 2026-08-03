@@ -115,11 +115,11 @@ def build_optimizer(model, cfg):
     name = cfg["training"].get("optimizer", "adadelta").lower()
     lr = cfg["training"]["lr"]
     if name == "adadelta":
-        return torch.optim.Adadelta(model.parameters(), lr=lr)
+        return torch.optim.Adadelta(model.parameters(), lr=float(lr))
     elif name == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr)
+        return torch.optim.Adam(model.parameters(), lr=float(lr))
     elif name == "sgd":
-        return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        return torch.optim.SGD(model.parameters(), lr=float(lr), momentum=0.9)
     else:
         raise ValueError(f"Optimizer '{name}' tidak dikenali (pilih: adadelta/adam/sgd)")
 
