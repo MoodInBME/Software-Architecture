@@ -13,10 +13,11 @@ Verifikasi:
 ```bash
 cat /etc/nv_tegra_release    # Harus: R39 (release), REVISION: 2.0
 python3 --version            # Harus: 3.12.x
-nvcc --version               # Harus: CUDA 13.2
+nvcc --version               # Harus: CUDA 13.2 atau 13.3
 ```
 
-Jika salah satu tidak sesuai, **jangan lanjutkan**. Flash ulang dulu.
+Jika versi tidak sesuai (terlalu tertinggal), **jangan lanjutkan** dan flash ulang dulu. 
+*(Catatan: Jika `nvcc` Anda menunjukkan **CUDA 13.3**, ini sangat normal untuk update JetPack 7.2 terbaru. Wheel PyTorch `cu132` sepenuhnya kompatibel dan akan berjalan tanpa masalah di CUDA 13.3 berkat kompatibilitas mundur minor version dari driver CUDA).*
 
 ---
 
