@@ -21,7 +21,9 @@ Jika versi tidak sesuai (terlalu tertinggal), **jangan lanjutkan** dan flash ula
 
 ---
 
-## 2. Virtual Environment
+## 2. Clone Repo dan Virtual Environment
+
+Pertama, pastikan Anda men-clone repo terlebih dahulu sebelum membuat *virtual environment*:
 
 ```bash
 sudo apt-get update
@@ -29,7 +31,9 @@ sudo apt-get install -y python3-venv python3-dev libopenblas-dev \
     libhdf5-dev libjpeg-dev zlib1g-dev libavcodec-dev libavformat-dev \
     libswscale-dev cmake mosquitto mosquitto-clients
 
-cd ~/MoodIn_Software   # atau di mana pun Anda clone repo ini
+cd ~
+git clone https://github.com/MoodInBME/Software-Architecture.git MoodIn_Software
+cd MoodIn_Software
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
@@ -150,12 +154,11 @@ python3 -c "import cv2; print(cv2.__version__)"
 
 ---
 
-## 7. Clone Repo dan Jalankan
+## 7. Verifikasi dan Jalankan
+
+*(Pastikan Anda berada di dalam folder `~/MoodIn_Software` dan `.venv` sudah aktif)*
 
 ```bash
-git clone https://github.com/MoodInBME/Software-Architecture.git ~/MoodIn_Software
-cd ~/MoodIn_Software
-source .venv/bin/activate
 
 # Verifikasi semua file penting ada
 python3 -c "
