@@ -13,7 +13,7 @@ class STCHybridLoss(nn.Module):
     def _band_logpsd(self, sig):
         # 1. Paksa operasi FFT keluar dari AMP ke Float32 untuk menghindari bug ComplexHalf
         # BENAR: Biarkan AMP tetap berjalan atau casting manual
-        pred = pred.float()
+        sig = sig.float()
         pclip = pclip.float()
         # ... proses hitung loss time & freq ...
             
