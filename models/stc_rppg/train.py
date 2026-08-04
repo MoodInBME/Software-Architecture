@@ -34,17 +34,29 @@ try:
     from .loss import STCHybridLoss
     from .postprocessing import rPPGProcessor
 except ImportError:
-    # Fallback: dijalankan langsung sebagai script, mis. `python train.py`
-    # atau `!python train.py` di Colab -> relative import gagal karena
-    # Python tidak tahu train.py ini bagian dari package `stc_rppg`.
-    # Solusinya: tambahkan folder INDUK dari stc_rppg/ ke sys.path, lalu
-    # import stc_rppg sebagai package biasa.
-    _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Fallback: dijalankan langsung sebagai script (`python train.py`),
+    # relative import gagal karena Python tidak tahu train.py ini bagian
+    # dari package mana pun. Solusinya: deteksi nama package secara DINAMIS
+    # dari nama folder tempat train.py berada -- jangan hardcode "stc_rppg",
+    # karena platform seperti Kaggle bisa saja menaruh kode di folder
+    # bernama lain (mis. "/kaggle/working/1/" kalau di-attach sebagai
+    # dataset/utility script -> nama folder jadi "1", bukan "stc_rppg").
+    _pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    _pkg_name = os.path.basename(_pkg_dir)
+    _parent_dir = os.path.dirname(_pkg_dir)
     if _parent_dir not in sys.path:
         sys.path.insert(0, _parent_dir)
-    from stc_rppg.model import STCrPPG
-    from stc_rppg.loss import STCHybridLoss
-    from stc_rppg.postprocessing import rPPGProcessor
+    try:
+        STCrPPG = importlib.import_module(f"{_pkg_name}.model").STCrPPG
+        STCHybridLoss = importlib.import_module(f"{_pkg_name}.loss").STCHybridLoss
+        rPPGProcessor = importlib.import_module(f"{_pkg_name}.postprocessing").rPPGProcessor
+    except ImportError as e:
+        raise ImportError(
+            f"Gagal mengimpor modul model dari package '{_pkg_name}' "
+            f"(folder: {_pkg_dir}).\n"
+            f"Pastikan folder ini berisi __init__.py, model.py, loss.py, "
+            f"dan postprocessing.py.\nError asli: {e}"
+        ) from e
 
 
 def load_config(path):
@@ -115,11 +127,11 @@ def build_optimizer(model, cfg):
     name = cfg["training"].get("optimizer", "adadelta").lower()
     lr = cfg["training"]["lr"]
     if name == "adadelta":
-        return torch.optim.Adadelta(model.parameters(), lr=float(lr))
+        return torch.optim.Adadelta(model.parameters(), lr=lr)
     elif name == "adam":
-        return torch.optim.Adam(model.parameters(), lr=float(lr))
+        return torch.optim.Adam(model.parameters(), lr=lr)
     elif name == "sgd":
-        return torch.optim.SGD(model.parameters(), lr=float(lr), momentum=0.9)
+        return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     else:
         raise ValueError(f"Optimizer '{name}' tidak dikenali (pilih: adadelta/adam/sgd)")
 
@@ -171,7 +183,6 @@ def evaluate(model, loader, criterion, processor, device, use_amp=False):
         total_freq += loss_freq.item()
         n_batches += 1
 
-    if compute_hr:
         pred_np = pred.detach().float().cpu().numpy()
         gt_np = pclip.detach().float().cpu().numpy()
         for b in range(pred_np.shape[0]):
@@ -192,49 +203,66 @@ def evaluate(model, loader, criterion, processor, device, use_amp=False):
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip_norm,
-                    log_every, epoch, scaler=None, accum_steps=4): # <--- Tambahkan accum_steps=4
+                     log_every, epoch, scaler=None):
     model.train()
     running_loss, running_time, running_freq = 0.0, 0.0, 0.0
-    t0 = time.time()
+    data_time_acc, compute_time_acc = 0.0, 0.0
     use_amp = scaler is not None and scaler.is_enabled()
 
-    optimizer.zero_grad() # Reset gradien di luar loop
-
+    t_prev = time.time()
     for step, (vclip, pclip) in enumerate(loader):
+        t_data_done = time.time()
+        data_time_acc += t_data_done - t_prev
+
         vclip = vclip.to(device, non_blocking=True)
         pclip = pclip.to(device, non_blocking=True)
+
+        optimizer.zero_grad()
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
             pred = model(vclip)
             loss, loss_time, loss_freq = criterion(pred, pclip)
-            # Bagi loss dengan accum_steps
-            loss = loss / accum_steps 
 
         if use_amp:
             scaler.scale(loss).backward()
+            if grad_clip_norm:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+            scaler.step(optimizer)
+            scaler.update()
         else:
             loss.backward()
+            if grad_clip_norm:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+            optimizer.step()
 
-        # Update bobot model HANYA setiap accum_steps (misal tiap 4 mini-batch)
-        if (step + 1) % accum_steps == 0 or (step + 1) == len(loader):
-            if use_amp:
-                if grad_clip_norm:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                if grad_clip_norm:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-                optimizer.step()
-            
-            optimizer.zero_grad()
+        if device.type == "cuda":
+            torch.cuda.synchronize()  # supaya timing compute akurat (GPU async)
+        t_compute_done = time.time()
+        compute_time_acc += t_compute_done - t_data_done
 
-        # Kalikan balik loss untuk keperluan logging/catatan
-        running_loss += loss.item() * accum_steps
+        running_loss += loss.item()
         running_time += loss_time.item()
         running_freq += loss_freq.item()
-    
+
+        if (step + 1) % log_every == 0:
+            total = data_time_acc + compute_time_acc
+            data_pct = 100 * data_time_acc / max(total, 1e-9)
+            print(f"  [epoch {epoch}] step {step + 1}/{len(loader)} "
+                  f"loss={loss.item():.4f} (time={loss_time.item():.4f}, "
+                  f"freq={loss_freq.item():.4f}) | "
+                  f"total={total:.1f}s (data={data_time_acc:.1f}s [{data_pct:.0f}%], "
+                  f"compute={compute_time_acc:.1f}s)")
+            data_time_acc, compute_time_acc = 0.0, 0.0
+
+        t_prev = time.time()
+
+    n = len(loader)
+    return {
+        "loss": running_loss / n,
+        "loss_time": running_time / n,
+        "loss_freq": running_freq / n,
+    }
 
 
 def main():
@@ -351,27 +379,6 @@ def main():
           f"optimizer={cfg['training'].get('optimizer')}, "
           f"lr={cfg['training']['lr']}, lambda={cfg['training'].get('lambda_weight')}\n")
 
-    if len(history) > 0:
-        epochs_plt = [h["epoch"] for h in history]
-        train_loss = [h["train_loss"] for h in history]
-        val_loss = [h["val_loss"] for h in history]
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(epochs_plt, train_loss, label='Train Loss', marker='o')
-        plt.plot(epochs_plt, val_loss, label='Validation Loss', marker='s')
-        
-        plt.title('Kurva Pembelajaran: Train vs Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.7)
-        
-        # Simpan grafik sebagai gambar di folder checkpoint
-        plot_path = os.path.join(ckpt_dir, "loss_curve.png")
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"\nGrafik loss berhasil disimpan di: {plot_path}")
-
     epoch = start_epoch - 1  # jaga-jaga: dipakai except KeyboardInterrupt kalau
                               # interrupt terjadi sebelum loop sempat iterasi
     zip_on_finish = cfg["training"].get("zip_checkpoints", True)
@@ -383,8 +390,7 @@ def main():
                 model, train_loader, criterion, optimizer, device,
                 grad_clip_norm, log_every, epoch, scaler=scaler,
             )
-            calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
-            val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
+            val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp)
             elapsed = time.time() - t0
 
             print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
