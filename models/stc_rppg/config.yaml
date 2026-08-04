@@ -12,7 +12,7 @@ data:
   train_ratio: 0.8 # split 8:2 per-subjek
   seed: 42
   batch_size:
-    8 # diturunkan dari 4 -> OOM di GPU 15GB (Colab T4) walau
+    2 # diturunkan dari 4 -> OOM di GPU 15GB (Colab T4) walau
     # DiTAC sudah dioptimasi. Naikkan lagi kalau pakai GPU
     # >20GB (mis. A5000 seperti di paper).
   num_workers: 0 # disamakan dgn saran Colab (CPU core terbatas di runtime gratis)
