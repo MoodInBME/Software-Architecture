@@ -171,14 +171,15 @@ def evaluate(model, loader, criterion, processor, device, use_amp=False):
         total_freq += loss_freq.item()
         n_batches += 1
 
-        pred_np = pred.detach().float().cpu().numpy()
-        gt_np = pclip.detach().float().cpu().numpy()
-        for b in range(pred_np.shape[0]):
-            pred_filt = processor.filter_signal(pred_np[b])
-            gt_filt = processor.filter_signal(gt_np[b])
-            pred_bpm = processor.calculate_bpm(pred_filt)
-            gt_bpm = processor.calculate_bpm(gt_filt)
-            abs_errors.append(abs(pred_bpm - gt_bpm))
+       if compute_hr:
+            pred_np = pred.detach().float().cpu().numpy()
+            gt_np = pclip.detach().float().cpu().numpy()
+            for b in range(pred_np.shape[0]):
+                pred_filt = processor.filter_signal(pred_np[b])
+                gt_filt = processor.filter_signal(gt_np[b])
+                pred_bpm = processor.calculate_bpm(pred_filt)
+                gt_bpm = processor.calculate_bpm(gt_filt)
+                abs_errors.append(abs(pred_bpm - gt_bpm))
 
     abs_errors = np.asarray(abs_errors) if abs_errors else np.array([0.0])
     return {
@@ -427,6 +428,9 @@ def main():
         print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
         if zip_on_finish:
             zip_checkpoints(ckpt_dir)
+    # Evaluasi HR MAE hanya tiap 5 epoch atau di epoch terakhir
+    calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
+    val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
 
     except KeyboardInterrupt:
         # Simpan checkpoint darurat begitu Ctrl+C / tombol stop ditekan,
