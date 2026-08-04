@@ -118,7 +118,56 @@ def _save_clips(lands, v, a, subject, source, name, clip_len, stride, clips_dir,
 
 def process_ckplus(input_root, output_dir, clip_len, stride, extractor):
     import cv2
-    # cari folder gambar & label
+    import collections
+    clips_dir = os.path.join(output_dir, "clips")
+    os.makedirs(clips_dir, exist_ok=True)
+    manifest = []
+    skipped = 0
+
+    # Cek format: apakah ada folder "anger", "happy", dll (Kaggle CK+48)
+    subdirs = [d.lower() for d in os.listdir(input_root) if os.path.isdir(os.path.join(input_root, d))]
+    is_kaggle = any(emo in subdirs for emo in ["anger", "happy", "sadness", "surprise"])
+
+    if is_kaggle:
+        print("[ckplus] Terdeteksi format Kaggle CK+48 (folder emosi).")
+        seqs = collections.defaultdict(list)
+        for emo_folder in os.listdir(input_root):
+            emo_path = os.path.join(input_root, emo_folder)
+            if not os.path.isdir(emo_path): continue
+            emo = emo_folder.lower()
+            if emo == "sadness": emo = "sad"
+            if emo not in _FALLBACK_EMO_VA: continue
+            
+            for fname in os.listdir(emo_path):
+                if not fname.endswith(('.png', '.jpg')): continue
+                parts = fname.split('_')
+                if len(parts) >= 2:
+                    subj_seq = f"{parts[0]}_{parts[1]}"
+                    seqs[(subj_seq, emo)].append(os.path.join(emo_path, fname))
+                    
+        for (subj_seq, emo), frame_paths in seqs.items():
+            frame_paths = sorted(frame_paths)
+            v, a = _emotion_va(emo)
+            frames = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in frame_paths]
+            lands = _landmarks_from_frames(frames, extractor)
+            if lands is None:
+                skipped += 1
+                continue
+            
+            # CK+48 Kaggle hanya berisi beberapa frame puncak.
+            # Pad (ulangi frame terakhir) hingga mencapai clip_len agar ST-GCN bisa jalan.
+            if lands.shape[0] < clip_len:
+                pad_len = clip_len - lands.shape[0]
+                pad_lands = np.repeat(lands[-1:], pad_len, axis=0)
+                lands = np.concatenate([lands, pad_lands], axis=0)
+                
+            _save_clips(lands, v, a, subj_seq, "ckplus_kaggle", subj_seq,
+                        clip_len, stride, clips_dir, manifest)
+        
+        print(f"[ckplus] sekuens dilewati (tanpa wajah): {skipped}")
+        return manifest
+
+    # Format asli CK+ (images/ dan Emotion/)
     images_root = input_root
     for cand in ("cohn-kanade-images", "images"):
         p = os.path.join(input_root, cand)
@@ -131,11 +180,6 @@ def process_ckplus(input_root, output_dir, clip_len, stride, extractor):
         if os.path.isdir(p):
             emotion_root = p
             break
-
-    clips_dir = os.path.join(output_dir, "clips")
-    os.makedirs(clips_dir, exist_ok=True)
-    manifest = []
-    skipped = 0
 
     subjects = sorted(d for d in os.listdir(images_root)
                       if os.path.isdir(os.path.join(images_root, d)))
@@ -169,6 +213,12 @@ def process_ckplus(input_root, output_dir, clip_len, stride, extractor):
             if lands is None:
                 skipped += 1
                 continue
+            
+            if lands.shape[0] < clip_len:
+                pad_len = clip_len - lands.shape[0]
+                pad_lands = np.repeat(lands[-1:], pad_len, axis=0)
+                lands = np.concatenate([lands, pad_lands], axis=0)
+
             _save_clips(lands, v, a, subj, "ckplus", f"{subj}_{seq}",
                         clip_len, stride, clips_dir, manifest)
     print(f"[ckplus] sekuens dilewati (tanpa label/wajah): {skipped}")
