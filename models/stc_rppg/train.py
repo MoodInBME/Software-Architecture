@@ -192,52 +192,49 @@ def evaluate(model, loader, criterion, processor, device, use_amp=False):
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip_norm,
-                     log_every, epoch, scaler=None):
+                    log_every, epoch, scaler=None, accum_steps=4): # <--- Tambahkan accum_steps=4
     model.train()
     running_loss, running_time, running_freq = 0.0, 0.0, 0.0
     t0 = time.time()
     use_amp = scaler is not None and scaler.is_enabled()
 
+    optimizer.zero_grad() # Reset gradien di luar loop
+
     for step, (vclip, pclip) in enumerate(loader):
         vclip = vclip.to(device, non_blocking=True)
         pclip = pclip.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-
         with torch.autocast(device_type=device.type, enabled=use_amp):
             pred = model(vclip)
             loss, loss_time, loss_freq = criterion(pred, pclip)
+            # Bagi loss dengan accum_steps
+            loss = loss / accum_steps 
 
         if use_amp:
             scaler.scale(loss).backward()
-            if grad_clip_norm:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-            scaler.step(optimizer)
-            scaler.update()
         else:
             loss.backward()
-            if grad_clip_norm:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
-            optimizer.step()
 
-        running_loss += loss.item()
+        # Update bobot model HANYA setiap accum_steps (misal tiap 4 mini-batch)
+        if (step + 1) % accum_steps == 0 or (step + 1) == len(loader):
+            if use_amp:
+                if grad_clip_norm:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                if grad_clip_norm:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+                optimizer.step()
+            
+            optimizer.zero_grad()
+
+        # Kalikan balik loss untuk keperluan logging/catatan
+        running_loss += loss.item() * accum_steps
         running_time += loss_time.item()
         running_freq += loss_freq.item()
-
-        if (step + 1) % log_every == 0:
-            elapsed = time.time() - t0
-            print(f"  [epoch {epoch}] step {step + 1}/{len(loader)} "
-                  f"loss={loss.item():.4f} (time={loss_time.item():.4f}, "
-                  f"freq={loss_freq.item():.4f}) | {elapsed:.1f}s")
-            t0 = time.time()
-
-    n = len(loader)
-    return {
-        "loss": running_loss / n,
-        "loss_time": running_time / n,
-        "loss_freq": running_freq / n,
-    }
+    
 
 
 def main():
