@@ -171,15 +171,15 @@ def evaluate(model, loader, criterion, processor, device, use_amp=False):
         total_freq += loss_freq.item()
         n_batches += 1
 
-       if compute_hr:
-            pred_np = pred.detach().float().cpu().numpy()
-            gt_np = pclip.detach().float().cpu().numpy()
-            for b in range(pred_np.shape[0]):
-                pred_filt = processor.filter_signal(pred_np[b])
-                gt_filt = processor.filter_signal(gt_np[b])
-                pred_bpm = processor.calculate_bpm(pred_filt)
-                gt_bpm = processor.calculate_bpm(gt_filt)
-                abs_errors.append(abs(pred_bpm - gt_bpm))
+    if compute_hr:
+        pred_np = pred.detach().float().cpu().numpy()
+        gt_np = pclip.detach().float().cpu().numpy()
+        for b in range(pred_np.shape[0]):
+            pred_filt = processor.filter_signal(pred_np[b])
+            gt_filt = processor.filter_signal(gt_np[b])
+            pred_bpm = processor.calculate_bpm(pred_filt)
+            gt_bpm = processor.calculate_bpm(gt_filt)
+            abs_errors.append(abs(pred_bpm - gt_bpm))
 
     abs_errors = np.asarray(abs_errors) if abs_errors else np.array([0.0])
     return {
