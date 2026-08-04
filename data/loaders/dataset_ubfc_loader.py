@@ -94,6 +94,8 @@ class UBFCrPPGDataset(Dataset):
 
     def _build_index(self):
         index = []
+        n = len(self.paths)
+        t0 = time.time()
         for pi, p in enumerate(self.paths):
             sample = self._load_sample(p)
             n_frames_video = int(sample["video"].shape[1])
@@ -107,6 +109,13 @@ class UBFCrPPGDataset(Dataset):
             starts = list(range(0, last + 1, self.stride)) or [0]
             for s in starts:
                 index.append((pi, s))
+
+            elapsed = time.time() - t0
+            avg = elapsed / (pi + 1)
+            eta = avg * (n - pi - 1)
+            print(f"  Memuat subjek {pi + 1}/{n}: "
+                  f"{os.path.basename(p)} ({elapsed:.1f}s berlalu, "
+                  f"perkiraan sisa {eta:.1f}s)")
         return index
 
     def __len__(self):
