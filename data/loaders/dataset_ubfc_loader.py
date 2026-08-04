@@ -46,7 +46,7 @@ class UBFCrPPGDataset(Dataset):
     """
 
     def __init__(self, prepared_dir, clip_len=128, stride=64,
-                 normalize_target=True, subject_ids=None):
+                 normalize_target=True, subject_ids=None, cache_in_memory=True):
         all_paths = sorted(glob.glob(os.path.join(prepared_dir, "*.pt")))
         if not all_paths:
             raise FileNotFoundError(f"Tidak ada .pt di {prepared_dir}")
@@ -63,14 +63,41 @@ class UBFCrPPGDataset(Dataset):
         self.clip_len = int(clip_len)
         self.stride = int(stride)
         self.normalize_target = normalize_target
+        # FIX (performa): sebelumnya __getitem__ men-torch.load() ulang file
+        # penuh dari disk SETIAP kali sebuah klip diminta -- dengan
+        # shuffle=True, tiap step nyaris pasti pindah subjek, jadi disk
+        # dibaca berulang-ulang tanpa perlu. Sekarang file dibaca SEKALI di
+        # sini (_build_index sudah harus buka tiap file untuk cek shape,
+        # jadi sekalian di-cache alih-alih dibuang) dan dipakai ulang.
+        #
+        # Catatan RAM: di Linux (Kaggle/Colab pakai Linux), worker
+        # DataLoader dibuat lewat fork() -- cache yang sudah terisi di sini
+        # (proses utama) otomatis ter-share ke semua worker lewat
+        # copy-on-write, JADI TIDAK dobel walau num_workers>1, selama tensor
+        # ini hanya dibaca (tidak pernah ditulis ulang) oleh worker. Di
+        # Windows (start method 'spawn'), tiap worker akan re-run __init__
+        # sendiri-sendiri -> RAM terpakai kali num_workers. Kalau dataset
+        # Anda besar dan jalan di Windows, set cache_in_memory=False.
+        self.cache_in_memory = cache_in_memory
+        self._cache = {}
         self.index = self._build_index()
+
+    def _load_sample(self, path):
+        if self.cache_in_memory:
+            cached = self._cache.get(path)
+            if cached is not None:
+                return cached
+        sample = torch.load(path, weights_only=True)
+        if self.cache_in_memory:
+            self._cache[path] = sample
+        return sample
 
     def _build_index(self):
         index = []
         for pi, p in enumerate(self.paths):
-            meta = torch.load(p, weights_only=True)
-            n_frames_video = int(meta["video"].shape[1])
-            n_frames_ppg = int(meta["ppg"].shape[0])
+            sample = self._load_sample(p)
+            n_frames_video = int(sample["video"].shape[1])
+            n_frames_ppg = int(sample["ppg"].shape[0])
             if n_frames_video != n_frames_ppg:
                 raise ValueError(
                     f"Panjang video ({n_frames_video}) != panjang ppg "
@@ -87,7 +114,7 @@ class UBFCrPPGDataset(Dataset):
 
     def __getitem__(self, idx):
         pi, start = self.index[idx]
-        sample = torch.load(self.paths[pi], weights_only=True)
+        sample = self._load_sample(self.paths[pi])
         video = sample["video"].float()   # (C,T,H,W)
         ppg = sample["ppg"].float()       # (T,)
 
@@ -184,7 +211,7 @@ def main():
     ap.add_argument("--clip_len", type=int, default=128)
     ap.add_argument("--stride", type=int, default=64)
     ap.add_argument("--batch_size", type=int, default=4)
-    ap.add_argument("--num_workers", type=int, default=4)
+    ap.add_argument("--num_workers", type=int, default=0)
     ap.add_argument("--max_batches", type=int, default=3,
                      help="jumlah batch contoh yang diambil untuk verifikasi")
     args = ap.parse_args()
