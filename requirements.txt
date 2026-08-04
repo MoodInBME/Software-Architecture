@@ -1,17 +1,17 @@
 # =====================================================================
 # MoodIn_Software - requirements.txt  (DRAFT - lingkungan dev/laptop)
 # =====================================================================
-# Python 3.10 DISARANKAN (selaras JetPack 6.2 di Jetson = Python 3.12).
-# 3.11 / 3.12 masih OK di laptop. HINDARI 3.14 (wheel torch & mediapipe
-# belum tersedia; lihat docs/CODE_REVIEW_root_files.md butir S-ENV).
+# Python 3.12 (selaras JetPack 7.2 di Jetson).
+# HINDARI 3.14 (wheel torch & mediapipe
+# belum tersedia).
 #
 # Pasang:  python -m pip install -r requirements.txt
 # Untuk Jetson: JANGAN pakai file ini untuk torch. Lihat requirements-jetson.txt
 # ---------------------------------------------------------------------
 
 # ---- Deep learning (laptop: CPU atau CUDA desktop) ----
-torch==2.3.1
-torchvision==0.18.1
+torch>=2.3.1
+torchvision>=0.18.1
 
 # ---- Numerik & pemrosesan sinyal ----
 numpy>=1.24,<2.0          # <2.0: kompatibel mediapipe/opencv saat ini

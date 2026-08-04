@@ -12,24 +12,29 @@ Seluruh kode model dan pemrosesan sinyal MoodIn. Repo ini tidak memuat kode UI d
 
 ```
 Software-Architecture/
-  common/
-    labels.py                    va_to_mood, MOOD_LABELS, NEUTRAL_RADIUS
+  models/
+    st_gcn_graph_tran/           cabang ekspresi (ST-GCN + Graph Transformer)
+      model.py, graph.py, heads.py, st_gcn_block.py, transformer.py
+      train.py, config.yaml, labels.py
+    stc_rppg/                    cabang fisiologis (STC-rPPG)
+      model.py, fsfe.py, stfe.py, predictor.py, cdc.py, ditac.py
+    fusion/
+      late_fusion.py             LateFusionVABridge
   data/
     preprocessing/
-      extract_landmarks_video.py MediaPipe 468 -> iBUG 68 -> cache .npy + manifest
-      prepare_data_ubfc.py       pemotongan klip UBFC-rPPG
+      extract_landmarks_video.py MediaPipe 468 -> iBUG 68 -> cache .pt + manifest
+      landmark_map.py            MEDIAPIPE_FACEMESH_TO_IBUG68 (68 indeks)
+      landmark_extraction_mediapipe.py
     loaders/
       expression_video_loader.py ExpressionLandmarkDataset -> (x, va, mood)
-  models/
-    st_gcn_graph_tran/           cabang ekspresi
-    stc_rppg/                    cabang fisiologis
-  fusion/
-    late_fusion.py               LateFusionVABridge
   evaluation/
     va_metrics.py                CCC, PCC, RMSE, SAGR, evaluate_va
   notebooks/
     ck_plus_stgcn_kaggle.ipynb   pelatihan + validasi + ekspor + mock UI
-  export/                        artefak hasil notebook (gitignored)
+  weights/                       bobot model (dummy atau terlatih)
+  inference.py                   pipeline real-time edge (Jetson/laptop)
+  train.py                       router pelatihan dua cabang
+  JETSON_SETUP.md                panduan setup Jetson Orin Nano Super
 ```
 
 ## 2. Dua Cabang, Satu Ruang Keluaran
@@ -65,7 +70,7 @@ opencv-python==4.10.0.84
 paho-mqtt==2.1.0
 scikit-learn  onnx  onnxruntime  matplotlib  pyyaml
 ```
-> **Catatan Edge:** Deployment di Jetson Orin Nano Super menggunakan environment bawaan JetPack 7.2. PyTorch menggunakan wheel `jp6/cu126` dari repositori NVIDIA Jetson, jangan memakai wheel PyPI standar.
+> **Catatan Edge:** Deployment di Jetson Orin Nano Super menggunakan JetPack 7.2 (CUDA 13.2.1). PyTorch: `pip install torch==2.12.0+cu132 --index-url https://download.pytorch.org/whl/cu132`
 
 ## 5. Batasan Terbuka (Catatan Evaluasi)
 
@@ -79,4 +84,3 @@ scikit-learn  onnx  onnxruntime  matplotlib  pyyaml
 1. Tambahkan argumen `--folds` dan `--fold` ke `models/st_gcn_graph_tran/train.py`.
 2. Verifikasi empiris `MEDIAPIPE_TO_IBUG68` (Procrustes) terhadap LCK+.
 3. Kalibrasi `w1`, `w2` fusi multimodal dengan metrik `oof_predictions.npz`.
-4. Menambahkan script deployment `deployment/edge_inference_jetson.py` khusus untuk Jetson Orin Nano (karena skrip lama menggunakan nama rpi5).
