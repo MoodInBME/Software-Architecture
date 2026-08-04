@@ -317,6 +317,9 @@ def main():
     best_hr_mae = float("inf")
     start_epoch = 1
     history = []
+     # Evaluasi HR MAE hanya tiap 5 epoch atau di epoch terakhir
+    calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
+    val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
 
     # --- Resume dari checkpoint (kalau diminta) ---
     resume_arg = args.resume if args.resume is not None else cfg["training"].get("resume")
@@ -428,9 +431,6 @@ def main():
         print(f"\nTraining selesai. Best HR MAE (test): {best_hr_mae:.2f} bpm")
         if zip_on_finish:
             zip_checkpoints(ckpt_dir)
-    # Evaluasi HR MAE hanya tiap 5 epoch atau di epoch terakhir
-    calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
-    val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
 
     except KeyboardInterrupt:
         # Simpan checkpoint darurat begitu Ctrl+C / tombol stop ditekan,
