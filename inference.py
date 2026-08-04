@@ -21,6 +21,7 @@ import numpy as np
 import collections
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -209,6 +210,53 @@ def main():
     last_bpm = 0.0
     last_confidence = 0.0
     frame_count = 0
+    inference_running = False
+
+    def run_inference_thread(stgcn_t_in, rppg_t_in):
+        nonlocal last_mood, last_bpm, last_confidence, inference_running
+        try:
+            with torch.no_grad():
+                stgcn_out = stgcn(stgcn_t_in)
+                va = stgcn_out["va"].squeeze(0).cpu().numpy()
+                face_val, face_aro = float(va[0]), float(va[1])
+
+                rppg_signal = stc_rppg(rppg_t_in).squeeze().cpu().numpy()
+                n = len(rppg_signal)
+                if n > 1:
+                    fft_mag = np.abs(np.fft.rfft(rppg_signal))
+                    freqs = np.fft.rfftfreq(n, d=1.0 / FPS_TARGET)
+                    valid = (freqs >= 0.7) & (freqs <= 3.5)
+                    if np.any(valid):
+                        peak_idx = np.argmax(fft_mag[valid])
+                        peak_freq = freqs[valid][peak_idx]
+                        bpm = peak_freq * 60.0
+                    else:
+                        bpm = 0.0
+                else:
+                    bpm = 0.0
+
+            result = fusion.fuse(
+                face_valence=face_val, face_arousal=face_aro,
+                face_confidence=1.0, hr_bpm=bpm if bpm > 0 else None, hrv_ms=None
+            )
+
+            last_mood = result["mood_label"]
+            last_bpm = result["heart_rate_bpm"] if result["heart_rate_bpm"] else bpm
+            last_confidence = result["confidence"]
+
+            if mqtt_client is not None:
+                payload = {
+                    "mood_id": result["mood_id"], "mood_label": result["mood_label"],
+                    "confidence": result["confidence"], "valence": result["valence"],
+                    "arousal": result["arousal"], "heart_rate_bpm": result["heart_rate_bpm"],
+                    "hrv_ms": result["hrv_ms"], "physio_used": result["physio_used"],
+                    "timestamp": time.time()
+                }
+                mqtt_client.publish(MQTT_TOPIC_RESULT, json.dumps(payload))
+        except Exception as e:
+            print(f"[Error] Forward pass gagal: {e}")
+        finally:
+            inference_running = False
 
     print(f"[Inference] Backend wajah: {FACE_BACKEND}")
     print(f"[Inference] Tekan 'q' untuk keluar.\n")
@@ -260,81 +308,32 @@ def main():
 
         # ---- Forward Pass Model ----
         if len(buf_stgcn) >= CLIP_LEN_STGCN and len(buf_rppg) >= CLIP_LEN_RPPG:
-            try:
-                # ST-GCN: input (N=1, C=2, T=150, V=68)
-                stgcn_np = np.array(list(buf_stgcn))       # (150, 68, 2)
-                stgcn_np = stgcn_np.transpose(2, 0, 1)     # (2, 150, 68) = (C, T, V)
-                stgcn_t = torch.tensor(stgcn_np, dtype=torch.float32)
-                stgcn_t = stgcn_t.unsqueeze(0).to(device)  # (1, 2, 150, 68)
+            if not inference_running:
+                try:
+                    inference_running = True
+                    
+                    # Salin data agar aman digunakan oleh thread lain
+                    stgcn_np = np.array(list(buf_stgcn))       
+                    stgcn_np = stgcn_np.transpose(2, 0, 1)     
+                    stgcn_t = torch.tensor(stgcn_np, dtype=torch.float32).unsqueeze(0).to(device)
+                    
+                    rppg_np = np.array(list(buf_rppg)[-CLIP_LEN_RPPG:]) 
+                    rppg_np = rppg_np.transpose(3, 0, 1, 2)
+                    rppg_t = torch.tensor(rppg_np, dtype=torch.float32).unsqueeze(0).to(device)
 
-                # STC-rPPG: input (N=1, C=3, T=128, H=128, W=128)
-                rppg_np = np.array(list(buf_rppg)[-CLIP_LEN_RPPG:])  # (128, 128, 128, 3)
-                rppg_np = rppg_np.transpose(3, 0, 1, 2)              # (3, 128, 128, 128) = (C, T, H, W)
-                rppg_t = torch.tensor(rppg_np, dtype=torch.float32)
-                rppg_t = rppg_t.unsqueeze(0).to(device)              # (1, 3, 128, 128, 128)
+                    # Luncurkan thread inferensi agar UI tidak nge-lag/nge-frame
+                    threading.Thread(target=run_inference_thread, args=(stgcn_t, rppg_t), daemon=True).start()
 
-                with torch.no_grad():
-                    # ST-GCN mengembalikan dict: {"va": tensor(1, 2)}
-                    stgcn_out = stgcn(stgcn_t)
-                    va = stgcn_out["va"].squeeze(0).cpu().numpy()  # (2,)
-                    face_val, face_aro = float(va[0]), float(va[1])
+                    # Stride: buang frame lama setelah mengirim data
+                    for _ in range(STRIDE):
+                        if buf_stgcn:
+                            buf_stgcn.popleft()
 
-                    # STC-rPPG mengembalikan sinyal 1D: tensor(1, T')
-                    rppg_signal = stc_rppg(rppg_t).squeeze().cpu().numpy()
-
-                    # Estimasi BPM dari sinyal rPPG via FFT
-                    n = len(rppg_signal)
-                    if n > 1:
-                        fft_mag = np.abs(np.fft.rfft(rppg_signal))
-                        freqs = np.fft.rfftfreq(n, d=1.0 / FPS_TARGET)
-                        # Band-pass 0.7 - 3.5 Hz (42 - 210 BPM)
-                        valid = (freqs >= 0.7) & (freqs <= 3.5)
-                        if np.any(valid):
-                            peak_idx = np.argmax(fft_mag[valid])
-                            peak_freq = freqs[valid][peak_idx]
-                            bpm = peak_freq * 60.0
-                        else:
-                            bpm = 0.0
-                    else:
-                        bpm = 0.0
-
-                # Fusi menggunakan API yang benar
-                result = fusion.fuse(
-                    face_valence=face_val,
-                    face_arousal=face_aro,
-                    face_confidence=1.0,
-                    hr_bpm=bpm if bpm > 0 else None,
-                    hrv_ms=None
-                )
-
-                last_mood = result["mood_label"]
-                last_bpm = result["heart_rate_bpm"] if result["heart_rate_bpm"] else bpm
-                last_confidence = result["confidence"]
-
-                # Publish ke MQTT
-                if mqtt_client is not None:
-                    payload = {
-                        "mood_id": result["mood_id"],
-                        "mood_label": result["mood_label"],
-                        "confidence": result["confidence"],
-                        "valence": result["valence"],
-                        "arousal": result["arousal"],
-                        "heart_rate_bpm": result["heart_rate_bpm"],
-                        "hrv_ms": result["hrv_ms"],
-                        "physio_used": result["physio_used"],
-                        "timestamp": time.time()
-                    }
-                    mqtt_client.publish(MQTT_TOPIC_RESULT, json.dumps(payload))
-
-                # Stride: buang frame lama
-                for _ in range(STRIDE):
-                    if buf_stgcn:
-                        buf_stgcn.popleft()
-
-            except Exception as e:
-                print(f"[Error] Forward pass gagal: {e}")
-                buf_stgcn.clear()
-                buf_rppg.clear()
+                except Exception as e:
+                    print(f"[Error] Gagal meluncurkan thread inferensi: {e}")
+                    inference_running = False
+                    buf_stgcn.clear()
+                    buf_rppg.clear()
 
         # ---- Overlay UI ----
         bar_h = 80
