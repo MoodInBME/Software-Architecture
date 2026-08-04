@@ -12,11 +12,10 @@ class STCHybridLoss(nn.Module):
 
     def _band_logpsd(self, sig):
         # 1. Paksa operasi FFT keluar dari AMP ke Float32 untuk menghindari bug ComplexHalf
-        with torch.cuda.amp.autocast(enabled=False):
-            sig_f32 = sig.float()
-            n = sig_f32.shape[1]
-            fft = torch.fft.rfft(sig_f32, dim=1)
-            psd = fft.real ** 2 + fft.imag ** 2
+        # BENAR: Biarkan AMP tetap berjalan atau casting manual
+        pred = pred.float()
+        pclip = pclip.float()
+        # ... proses hitung loss time & freq ...
             
         freqs = torch.fft.rfftfreq(n, d=1.0 / self.fps).to(sig.device)
         band = (freqs >= self.low) & (freqs <= self.high)
