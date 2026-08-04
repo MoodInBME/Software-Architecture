@@ -91,13 +91,13 @@ except ImportError:
     print("[MQTT] paho-mqtt tidak tersedia. Melanjutkan tanpa MQTT.")
 
 
-def gstreamer_pipeline(width=1280, height=720, fps=30):
+def gstreamer_pipeline(width=1280, height=720, fps=30, flip_method=2):
     """Pipeline GStreamer untuk nvarguscamerasrc (Jetson CSI, IMX477)."""
     return (
         f"nvarguscamerasrc ! "
         f"video/x-raw(memory:NVMM), width=(int){width}, height=(int){height}, "
         f"format=(string)NV12, framerate=(fraction){fps}/1 ! "
-        f"nvvidconv ! video/x-raw, format=(string)BGRx ! "
+        f"nvvidconv flip-method={flip_method} ! video/x-raw, format=(string)BGRx ! "
         f"videoconvert ! video/x-raw, format=(string)BGR ! appsink"
     )
 
