@@ -317,9 +317,6 @@ def main():
     best_hr_mae = float("inf")
     start_epoch = 1
     history = []
-     # Evaluasi HR MAE hanya tiap 5 epoch atau di epoch terakhir
-    calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
-    val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
 
     # --- Resume dari checkpoint (kalau diminta) ---
     resume_arg = args.resume if args.resume is not None else cfg["training"].get("resume")
@@ -389,7 +386,8 @@ def main():
                 model, train_loader, criterion, optimizer, device,
                 grad_clip_norm, log_every, epoch, scaler=scaler,
             )
-            val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp)
+            calculate_metrics = (epoch % 5 == 0) or (epoch == epochs)
+            val_stats = evaluate(model, test_loader, criterion, processor, device, use_amp=use_amp, compute_hr=calculate_metrics)
             elapsed = time.time() - t0
 
             print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
