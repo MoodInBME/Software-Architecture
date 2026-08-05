@@ -361,6 +361,20 @@ def main():
                     buf_stgcn.clear()
                     buf_rppg.clear()
 
+        # ---- Center Crop & Resize untuk Portrait Layar ----
+        if DISPLAY_PORTRAIT:
+            orig_h, orig_w = display.shape[:2]
+            target_aspect = SCREEN_WIDTH / SCREEN_HEIGHT
+            
+            # Hitung crop window
+            crop_w = int(orig_h * target_aspect)
+            if crop_w <= orig_w:
+                start_x = (orig_w - crop_w) // 2
+                display = display[:, start_x:start_x + crop_w]
+            
+            # Resize ke resolusi cermin
+            display = cv2.resize(display, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
         # ---- Overlay UI ----
         bar_h = 100
         overlay = display.copy()
@@ -381,20 +395,6 @@ def main():
         cv2.putText(display, f"Buffer: {len(buf_stgcn)}/{CLIP_LEN_STGCN}",
                     (display.shape[1] - 220, 55),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-
-        # ---- Center Crop & Resize untuk Portrait Layar ----
-        if DISPLAY_PORTRAIT:
-            orig_h, orig_w = display.shape[:2]
-            target_aspect = SCREEN_WIDTH / SCREEN_HEIGHT
-            
-            # Hitung crop window
-            crop_w = int(orig_h * target_aspect)
-            if crop_w <= orig_w:
-                start_x = (orig_w - crop_w) // 2
-                display = display[:, start_x:start_x + crop_w]
-            
-            # Resize ke resolusi cermin
-            display = cv2.resize(display, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
         cv2.namedWindow("MoodIn - Real-time Inference", cv2.WINDOW_NORMAL)
         cv2.setWindowProperty("MoodIn - Real-time Inference", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
