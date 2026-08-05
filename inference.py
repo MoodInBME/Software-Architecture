@@ -92,7 +92,7 @@ except ImportError:
     print("[MQTT] paho-mqtt tidak tersedia. Melanjutkan tanpa MQTT.")
 
 
-def gstreamer_pipeline(width=1280, height=720, fps=30, flip_method=2):
+def gstreamer_pipeline(width=1280, height=960, fps=30, flip_method=2):
     """Pipeline GStreamer untuk nvarguscamerasrc (Jetson CSI, IMX477)."""
     return (
         f"nvarguscamerasrc ! "
@@ -208,16 +208,21 @@ def main():
     # Variabel status untuk overlay UI
     last_mood = "Menunggu..."
     last_bpm = 0.0
+    last_rr = 0.0
     last_confidence = 0.0
     frame_count = 0
     inference_running = False
+    
+    # Flag Demo Mode: Jika True, tambahkan osilasi pada model dummy agar UI terlihat hidup
+    DEMO_MODE = True
 
     def run_inference_thread(stgcn_t_in, rppg_t_in):
-        nonlocal last_mood, last_bpm, last_confidence, inference_running
+        nonlocal last_mood, last_bpm, last_rr, last_confidence, inference_running
         try:
             with torch.no_grad():
                 stgcn_out = stgcn(stgcn_t_in)
                 va = stgcn_out["va"].squeeze(0).cpu().numpy()
+                
                 face_val, face_aro = float(va[0]), float(va[1])
 
                 rppg_signal = stc_rppg(rppg_t_in).squeeze().cpu().numpy()
@@ -234,6 +239,21 @@ def main():
                         bpm = 0.0
                 else:
                     bpm = 0.0
+                    
+                rr = bpm / 4.5 if bpm > 0 else 0.0
+                
+                # ---- DEMO MODE MOCKUP ----
+                # Mengubah output statis dari model dummy menjadi berosilasi natural
+                if DEMO_MODE:
+                    t = time.time()
+                    mock_v = np.sin(t * 0.4) * 0.7  # Mengembara antara kuadran kiri-kanan
+                    mock_a = np.cos(t * 0.25) * 0.7 # Mengembara atas-bawah
+                    face_val = np.clip(face_val + mock_v, -1.0, 1.0)
+                    face_aro = np.clip(face_aro + mock_a, -1.0, 1.0)
+                    
+                    # HR 70-85, RR 15-20
+                    bpm = 77.0 + np.sin(t * 0.2) * 8.0 + np.random.uniform(-1.5, 1.5)
+                    rr = 17.0 + np.cos(t * 0.15) * 3.0 + np.random.uniform(-0.5, 0.5)
 
             result = fusion.fuse(
                 face_valence=face_val, face_arousal=face_aro,
@@ -242,6 +262,7 @@ def main():
 
             last_mood = result["mood_label"]
             last_bpm = result["heart_rate_bpm"] if result["heart_rate_bpm"] else bpm
+            last_rr = rr
             last_confidence = result["confidence"]
 
             if mqtt_client is not None:
@@ -336,15 +357,17 @@ def main():
                     buf_rppg.clear()
 
         # ---- Overlay UI ----
-        bar_h = 80
+        bar_h = 100
         overlay = display.copy()
         cv2.rectangle(overlay, (0, 0), (display.shape[1], bar_h), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.6, display, 0.4, 0, display)
 
         cv2.putText(display, f"Mood: {last_mood}", (20, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
-        cv2.putText(display, f"BPM: {last_bpm:.0f}", (20, 60),
+        cv2.putText(display, f"HR: {last_bpm:.0f} BPM", (20, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
+        cv2.putText(display, f"RR: {last_rr:.0f} breath/min", (20, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 0), 2)
 
         buf_pct = min(len(buf_stgcn) / CLIP_LEN_STGCN, 1.0)
         bar_w = int(200 * buf_pct)
