@@ -1,0 +1,41 @@
+# MoodIn - konfigurasi runtime edge inference
+# Lokasi: config/default.yaml
+# [S10] Sebelumnya file ini kosong dan semua konstanta di-hardcode di
+# inference.py. Sekarang inference.py membaca file ini saat start-up; kunci
+# yang tidak ada akan memakai nilai bawaan di _defaults().
+
+# ---- Kamera ----
+camera_source: 0          # indeks fallback USB bila GStreamer CSI gagal
+csi_width: 1920           # verifikasi: v4l2-ctl --list-formats-ext -d /dev/video0
+csi_height: 1080
+csi_fps: 30
+csi_flip_method: 2        # 2 = rotate 180; sesuaikan orientasi modul di figura
+
+# ---- MQTT ----
+mqtt_enabled: true
+mqtt_host: localhost
+mqtt_port: 1883
+
+# ---- Buffer & model ----
+clip_len_stgcn: 150       # 5 detik @30 fps
+clip_len_rppg: 128
+stride: 15                # geser 0,5 detik per inferensi
+rppg_size: 128            # sisi ROI wajah yang masuk STC-rPPG
+fps_target: 30            # dipakai untuk konversi frekuensi -> BPM
+
+# ---- Tampilan (portrait, sesuai figura) ----
+screen_width: 600
+screen_height: 1024
+display_portrait: true
+fullscreen: true
+
+# ---- Mode demo ----
+# WAJIB true selama bobot masih dummy. Saat true, valence/arousal/BPM/RR
+# adalah simulasi berbasis waktu dan badge peringatan tampil permanen.
+# Ubah ke false HANYA setelah bobot hasil pelatihan CK+ terpasang.
+demo_mode: true
+demo_banner: "MODE DEMO - NILAI DISIMULASIKAN"
+
+# ---- Bobot ----
+weight_stgcn: weights/dummy_stgcn.pth
+weight_stcrppg: weights/dummy_stcrppg.pth
