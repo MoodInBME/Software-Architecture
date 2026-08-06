@@ -47,6 +47,9 @@ def _defaults():
     c["csi_height"] = 1080
     c["csi_fps"] = 30
     c["csi_flip_method"] = 2
+    c["csi_sensor_mode"] = 1
+    c["proc_width"] = 1280
+    c["proc_height"] = 720
     c["mqtt_enabled"] = True
     c["mqtt_host"] = "localhost"
     c["mqtt_port"] = 1883
@@ -201,14 +204,19 @@ def gstreamer_pipeline(width=None, height=None, fps=None, flip_method=None):
     fps = int(CFG["csi_fps"]) if fps is None else int(fps)
     flip_method = (int(CFG["csi_flip_method"])
                    if flip_method is None else int(flip_method))
+    mode = int(CFG["csi_sensor_mode"])
+    pw = int(CFG["proc_width"])
+    ph = int(CFG["proc_height"])
     return (
-        "nvarguscamerasrc ! "
+        "nvarguscamerasrc sensor-id=0 sensor-mode=" + str(mode) + " ! "
         "video/x-raw(memory:NVMM), width=(int)" + str(width) + ", "
         "height=(int)" + str(height) + ", format=(string)NV12, "
         "framerate=(fraction)" + str(fps) + "/1 ! "
         "nvvidconv flip-method=" + str(flip_method) + " ! "
-        "video/x-raw, format=(string)BGRx ! videoconvert ! "
-        "video/x-raw, format=(string)BGR ! appsink drop=true max-buffers=2"
+        "video/x-raw, width=(int)" + str(pw) + ", "
+        "height=(int)" + str(ph) + ", format=(string)BGRx ! "
+        "videoconvert ! video/x-raw, format=(string)BGR ! "
+        "appsink drop=true max-buffers=2 sync=false"
     )
 
 
@@ -308,6 +316,47 @@ def bpm_from_signal(rppg_signal, fps=None, f_lo=0.7, f_hi=3.5):
 # --------------------------------------------------------------------------
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
+RUNTIME = dict()
+RUNTIME["fps"] = 0.0
+RUNTIME["frames"] = 0
+RUNTIME["t0"] = time.time()
+
+
+def apply_fullscreen(win):
+    """Terapkan fullscreen SETELAH imshow pertama.
+
+    Backend highgui baru benar-benar membuat jendela pada imshow pertama.
+    Properti yang diset sebelum itu sering diabaikan diam-diam, dan itulah
+    sebabnya jendela tetap berbingkai pada percobaan sebelumnya.
+    """
+    try:
+        cv2.setWindowProperty(
+            win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    except Exception as e:
+        print("[UI] setWindowProperty fullscreen gagal: " + str(e))
+    try:
+        cv2.setWindowProperty(win, cv2.WND_PROP_TOPMOST, 1)
+    except Exception:
+        pass
+    if os.system("command -v wmctrl > /dev/null 2>&1") == 0:
+        os.system('wmctrl -r "' + win + '" -b add,fullscreen,above'
+                  " > /dev/null 2>&1")
+
+
+def tick_fps():
+    """Perbarui FPS nyata tiap detik.
+
+    Ini bukan hiasan. bpm_from_signal() mengasumsikan laju frame sama
+    dengan fps_target; kalau FPS nyata melenceng, BPM ikut melenceng
+    dengan faktor yang sama.
+    """
+    RUNTIME["frames"] += 1
+    dt = time.time() - RUNTIME["t0"]
+    if dt >= 1.0:
+        RUNTIME["fps"] = RUNTIME["frames"] / dt
+        RUNTIME["frames"] = 0
+        RUNTIME["t0"] = time.time()
+
 
 def draw_landmarks_on_frame(display_frame, face_lm_mediapipe=None, ibug68=None):
     if FACE_BACKEND == "mediapipe" and face_lm_mediapipe is not None:
@@ -384,8 +433,12 @@ def draw_status_overlay(display_frame, mood, bpm, rr, conf, buf_fill,
     cv2.putText(display_frame, rr_txt, (18, 82),
                 FONT, 0.52, (255, 200, 0), 1, cv2.LINE_AA)
 
-    cv2.putText(display_frame, "Conf: " + format(conf, ".2f"), (18, 106),
-                FONT, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    fps_now = RUNTIME["fps"]
+    fps_col = (200, 200, 200) if fps_now >= FPS_TARGET * 0.8 else (0, 80, 255)
+    cv2.putText(display_frame,
+                "Conf: " + format(conf, ".2f")
+                + "   FPS: " + format(fps_now, ".1f"),
+                (18, 106), FONT, 0.5, fps_col, 1, cv2.LINE_AA)
 
     bw = 150
     bx = w - bw - 18
@@ -558,14 +611,19 @@ def main():
     frame_count = 0
     win = "MoodIn - Real-time Inference"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-    if bool(CFG["fullscreen"]):
-        cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.resizeWindow(win, SCREEN_WIDTH, SCREEN_HEIGHT)
+    fs_pending = bool(CFG["fullscreen"])
+    if os.environ.get("XDG_SESSION_TYPE", "") == "wayland":
+        print("[UI] Sesi Wayland terdeteksi. Fullscreen highgui sering "
+              "gagal di Wayland; pasang wmctrl atau login memakai sesi "
+              "Xorg bila jendela tetap berbingkai.")
 
     while cap.isOpened():
         ok, frame = cap.read()
         if not ok:
             break
         frame_count += 1
+        tick_fps()
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         display = frame.copy()
         fh, fw = frame_rgb.shape[:2]
@@ -669,6 +727,10 @@ def main():
             s_phys, face_detected)
 
         cv2.imshow(win, display)
+        if fs_pending:
+            cv2.waitKey(1)
+            apply_fullscreen(win)
+            fs_pending = False
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
@@ -684,4 +746,15 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        # Ctrl+C bukan kegagalan program. Tanpa penanganan ini, traceback
+        # panjang muncul di terminal dan terlihat seperti crash.
+        print("")
+        print("[Inference] Dihentikan oleh pengguna (Ctrl+C).")
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
+        sys.exit(0)
