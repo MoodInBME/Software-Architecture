@@ -506,6 +506,40 @@ def main():
         print("[Bobot] Bobot bukan hasil pelatihan pada data nyata. "
               "Keluaran model tidak bermakna klinis.")
 
+    # ---- Warmup kernel CUDA ----
+    # PyTorch 2.12+cu132 tidak menyertakan cubin untuk sm_87 (Orin).
+    # Kernel dikompilasi JIT dari PTX compute_80 pada pemanggilan PERTAMA,
+    # yang bisa memakan beberapa detik dan membekukan UI tepat saat buffer
+    # penuh. Bentuk tensor di sini WAJIB sama persis dengan bentuk runtime,
+    # kalau tidak, kernel yang dikompilasi bukan kernel yang dipakai nanti.
+    warmup_ok = True
+    t_warm = time.time()
+    print("[Warmup] Kompilasi kernel CUDA untuk Orin (sekali saja)...")
+    try:
+        with torch.no_grad():
+            w_stgcn = torch.zeros(
+                1, 2, CLIP_LEN_STGCN, 68, 1,
+                dtype=torch.float32, device=device)
+            _ = stgcn(w_stgcn)["va"]
+            w_rppg = torch.zeros(
+                1, 3, CLIP_LEN_RPPG, RPPG_H, RPPG_W,
+                dtype=torch.float32, device=device)
+            _ = stc_rppg(w_rppg)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        del w_stgcn, w_rppg
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+    except Exception as e:
+        warmup_ok = False
+        print("[Warmup] GAGAL: " + str(e))
+        print("[Warmup] Bentuk tensor warmup mungkin tidak cocok dengan "
+              "model. Inferensi tetap dilanjutkan, tapi frame pertama "
+              "akan tersendat.")
+    if warmup_ok:
+        print("[Warmup] Selesai dalam "
+              + format(time.time() - t_warm, ".1f") + " detik.")
+
     mq = connect_mqtt()
 
     cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
