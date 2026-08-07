@@ -239,6 +239,61 @@ def gstreamer_pipeline(width=None, height=None, fps=None, flip_method=None):
     pw = int(CFG["proc_width"])
     ph = int(CFG["proc_height"])
 
+    # [S15] Penjaga rasio aspek.
+    #
+    # nvvidconv TIDAK PERNAH menjaga rasio aspek. Ia tidak menambahkan pita
+    # hitam. Ia menskalakan apa pun yang masuk agar pas persis ke caps
+    # keluaran, secara anisotropik, sumbu per sumbu.
+    #
+    # Hanya flip-method 1, 3, 5, dan 7 yang melakukan transpose (menukar
+    # lebar dengan tinggi). Nilai 0, 2, 4, dan 6 tidak. Jadi kalau
+    # proc_width/proc_height diubah menjadi potret tanpa ikut mengubah
+    # csi_flip_method ke nilai yang men-transpose, setiap bingkai keluar
+    # dengan geometri yang salah, dan MediaPipe memberi 0 persen deteksi
+    # karena wajah dengan proporsi seperti itu mustahil secara anatomis.
+    #
+    # Baris "[Kamera] bingkai pertama WxH" tidak bisa membedakan kondisi
+    # benar dari kondisi gepeng, karena keduanya menghasilkan WxH yang sama.
+    # Karena itu pemeriksaannya harus dilakukan di sini, sebelum satu
+    # bingkai pun diproses.
+    _transpose = flip_method in (1, 3, 5, 7)
+    _src_w, _src_h = (height, width) if _transpose else (width, height)
+    _rasio_src = _src_w / float(_src_h)
+    _rasio_out = pw / float(ph)
+    RUNTIME["aspect_ok"] = abs(_rasio_src - _rasio_out) <= 0.01
+    RUNTIME["aspect_ratio_src"] = _rasio_src
+    RUNTIME["aspect_ratio_out"] = _rasio_out
+    if not RUNTIME["aspect_ok"]:
+        _regang = _rasio_src / _rasio_out
+        print("")
+        print("=" * 66)
+        print("[Kamera] PERINGATAN RASIO ASPEK - BINGKAI AKAN DIREGANGKAN")
+        print("=" * 66)
+        print("  csi_flip_method   : %d  (transpose=%s)"
+              % (flip_method, "ya" if _transpose else "TIDAK"))
+        print("  Sumber sesudah flip : %d x %d  (rasio %.3f)"
+              % (_src_w, _src_h, _rasio_src))
+        print("  Caps keluaran proc_ : %d x %d  (rasio %.3f)"
+              % (pw, ph, _rasio_out))
+        print("  Skala mendatar    : %.3f" % (pw / float(_src_w)))
+        print("  Skala tegak       : %.3f" % (ph / float(_src_h)))
+        print("  Distorsi rasio    : %.2f kali" % _regang)
+        print("")
+        print("  Deteksi wajah kemungkinan besar akan 0 persen.")
+        print("  Perbaiki salah satu di config/default.yaml:")
+        if not _transpose and _rasio_out < 1.0:
+            print("    - Putar modul kamera 90 derajat secara FISIK, lalu")
+            print("      set csi_flip_method: 1  (kalau terbalik, pakai 3).")
+            print("    - Atau kembalikan proc_width: %d dan proc_height: %d"
+                  % (_src_w, _src_h))
+        else:
+            print("    - Samakan proc_width/proc_height dengan rasio %.3f,"
+                  % _rasio_src)
+            print("      misalnya %d x %d."
+                  % (pw, int(round(pw / _rasio_src))))
+        print("=" * 66)
+        print("")
+
     # [S12] Di balik kaca satu arah plus stiker rubben, cahaya yang sampai
     # ke sensor tinggal 10-20 persen. Auto-exposure bawaan Argus membalas
     # dengan menaikkan gain sampai berisik, atau memanjangkan waktu pajan
