@@ -9,7 +9,7 @@ camera_source: 0          # indeks fallback USB bila GStreamer CSI gagal
 csi_width: 1920           # verifikasi: v4l2-ctl --list-formats-ext -d /dev/video0
 csi_height: 1080
 csi_fps: 30
-csi_flip_method: 2        # 2 = rotate 180; sesuaikan orientasi modul di figura
+csi_flip_method: 1        # 2 = rotate 180; sesuaikan orientasi modul di figura
 
 csi_sensor_mode: 1        # 0 = 3840x2160@30, 1 = 1920x1080@60 (dari log Anda)
 proc_width: 720          # nvvidconv menurunkan resolusi di GPU sebelum ke CPU

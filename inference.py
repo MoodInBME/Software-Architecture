@@ -70,6 +70,27 @@ def _defaults():
     # lama, menyisakan hanya sepertiga lebar bingkai), "letterbox"
     # menyusutkan seluruh bingkai sehingga orang bisa memposisikan diri.
     c["portrait_mode"] = "letterbox"
+    # [S16] Lebar-per-tinggi daerah yang dipotong dari bingkai sumber,
+    # dipakai hanya ketika portrait_mode = "crop".
+    #   0      = ikuti rasio layar persis, gambar memenuhi layar tanpa
+    #            pita hitam sama sekali. Medan pandang mendatar paling
+    #            sempit.
+    #   0.75   = potongan lebih lebar, menyisakan pita tipis atas-bawah.
+    #   1.0    = potongan persegi, pita atas-bawah lebih tebal.
+    # Nilai lebih besar berarti orang berdiri lebih dekat masih muat,
+    # dengan ongkos pita hitam. Ini satu-satunya tuas untuk menukar
+    # medan pandang dengan keterisian layar, karena sensor terpasang
+    # mendatar secara permanen dan tidak boleh diputar.
+    c["crop_aspect"] = 0.0
+    # [S16] Pergeseran mendatar titik potong. -1.0 mentok kiri, 0.0 tepat
+    # di tengah, 1.0 mentok kanan. Dipakai kalau cermin tidak terpasang
+    # persis di depan tempat orang berdiri.
+    c["crop_offset_x"] = 0.0
+    # [S16] Spesifikasi lensa M12 55 derajat pada bingkai 16:9, dipakai
+    # hanya untuk mencetak laporan cakupan saat program mulai.
+    c["lens_hfov_deg"] = 45.2
+    c["lens_vfov_deg"] = 34.7
+    c["stand_distance_cm"] = 100.0
     # [S14] Kegagalan baca bingkai beruntun sebelum program menyerah.
     c["camera_read_retry"] = 30
     c["mqtt_enabled"] = True
@@ -124,6 +145,86 @@ FACE_TRK_CONF = float(CFG["face_trk_conf"])
 FACE_MISS_TOLERANCE = int(CFG["face_miss_tolerance"])
 FACE_MIN_PX = int(CFG["face_min_px"])
 PORTRAIT_MODE = str(CFG["portrait_mode"]).strip().lower()
+CROP_ASPECT = float(CFG["crop_aspect"])
+CROP_OFFSET_X = max(-1.0, min(1.0, float(CFG["crop_offset_x"])))
+LENS_HFOV_DEG = float(CFG["lens_hfov_deg"])
+LENS_VFOV_DEG = float(CFG["lens_vfov_deg"])
+STAND_DISTANCE_CM = float(CFG["stand_distance_cm"])
+
+
+def _hitung_geometri_potong(src_w, src_h, screen_w, screen_h):
+    """[S16] Hitung daerah potong dan cakupan sudut pandangnya.
+
+    Sensor IMX477 terpasang mendatar secara permanen. Memutar bingkai
+    lewat flip-method memang membuat gambar memenuhi layar potret tanpa
+    peregangan, tetapi ruangannya ikut miring 90 derajat. Satu-satunya
+    cara mendapatkan tegak, potret, dan tidak gepeng sekaligus, tanpa
+    menyentuh perangkat keras, adalah MEMOTONG daerah potret dari
+    bingkai mendatar dan membuang sisi kiri-kanannya.
+
+    Ongkosnya adalah medan pandang mendatar, dan ongkos itu harus
+    dinyatakan dalam sentimeter pada jarak berdiri, bukan disembunyikan.
+    """
+    import math
+    aspect_layar = screen_w / float(screen_h)
+    ca = CROP_ASPECT if CROP_ASPECT > 0.0 else aspect_layar
+    crop_h = src_h
+    crop_w = int(round(src_h * ca))
+    if crop_w > src_w:
+        crop_w = src_w
+        crop_h = min(src_h, int(round(src_w / ca)))
+    tan_h = math.tan(math.radians(LENS_HFOV_DEG) / 2.0)
+    tan_v = math.tan(math.radians(LENS_VFOV_DEG) / 2.0)
+    tan_h_eff = tan_h * (crop_w / float(src_w))
+    tan_v_eff = tan_v * (crop_h / float(src_h))
+    hfov = 2.0 * math.degrees(math.atan(tan_h_eff))
+    vfov = 2.0 * math.degrees(math.atan(tan_v_eff))
+    lebar_cm = 2.0 * STAND_DISTANCE_CM * tan_h_eff
+    tinggi_cm = 2.0 * STAND_DISTANCE_CM * tan_v_eff
+    skala = min(screen_w / float(crop_w), screen_h / float(crop_h))
+    isi_w = int(round(crop_w * skala))
+    isi_h = int(round(crop_h * skala))
+    return {
+        "crop_w": crop_w, "crop_h": crop_h, "aspect": ca,
+        "hfov": hfov, "vfov": vfov,
+        "lebar_cm": lebar_cm, "tinggi_cm": tinggi_cm,
+        "isi_w": isi_w, "isi_h": isi_h,
+        "pita_atas_bawah": max(0, screen_h - isi_h),
+        "pita_kiri_kanan": max(0, screen_w - isi_w),
+    }
+
+
+def lapor_geometri_potong():
+    """[S16] Cetak sekali saat mulai supaya pertukarannya kasat mata."""
+    g = _hitung_geometri_potong(int(CFG["proc_width"]),
+                                int(CFG["proc_height"]),
+                                SCREEN_WIDTH, SCREEN_HEIGHT)
+    print("")
+    print("[Potret] Mode potong aktif. Sensor mendatar, layar potret.")
+    print("  Sumber            : %d x %d"
+          % (int(CFG["proc_width"]), int(CFG["proc_height"])))
+    print("  Daerah dipotong   : %d x %d  (rasio %.3f)"
+          % (g["crop_w"], g["crop_h"], g["aspect"]))
+    print("  Tampil di layar   : %d x %d dari %d x %d"
+          % (g["isi_w"], g["isi_h"], SCREEN_WIDTH, SCREEN_HEIGHT))
+    if g["pita_atas_bawah"] > 0:
+        print("  Pita hitam        : %d piksel total, atas dan bawah"
+              % g["pita_atas_bawah"])
+    else:
+        print("  Pita hitam        : tidak ada, layar terisi penuh")
+    print("  Medan pandang     : %.1f derajat mendatar, %.1f tegak"
+          % (g["hfov"], g["vfov"]))
+    print("  Cakupan pada %d cm: %.1f cm lebar x %.1f cm tinggi"
+          % (int(STAND_DISTANCE_CM), g["lebar_cm"], g["tinggi_cm"]))
+    if g["lebar_cm"] < 25.0:
+        print("  PERINGATAN: lebar di bawah 25 cm. Kepala orang dewasa")
+        print("  sekitar 15 cm, jadi ruang geser kiri-kanan hampir habis.")
+        jarak_min = STAND_DISTANCE_CM * (25.0 / max(g["lebar_cm"], 0.1))
+        print("  Agar lebarnya mencapai 25 cm, berdirilah sekitar %d cm"
+              % int(round(jarak_min)))
+        print("  dari cermin, atau naikkan crop_aspect di default.yaml.")
+    print("")
+
 CAMERA_READ_RETRY = int(CFG["camera_read_retry"])
 DISPLAY_PORTRAIT = bool(CFG["display_portrait"])
 DEMO_MODE = bool(CFG["demo_mode"])
@@ -245,52 +346,36 @@ def gstreamer_pipeline(width=None, height=None, fps=None, flip_method=None):
     # hitam. Ia menskalakan apa pun yang masuk agar pas persis ke caps
     # keluaran, secara anisotropik, sumbu per sumbu.
     #
-    # Hanya flip-method 1, 3, 5, dan 7 yang melakukan transpose (menukar
-    # lebar dengan tinggi). Nilai 0, 2, 4, dan 6 tidak. Jadi kalau
-    # proc_width/proc_height diubah menjadi potret tanpa ikut mengubah
-    # csi_flip_method ke nilai yang men-transpose, setiap bingkai keluar
-    # dengan geometri yang salah, dan MediaPipe memberi 0 persen deteksi
-    # karena wajah dengan proporsi seperti itu mustahil secara anatomis.
+    # Hanya flip-method 1, 3, 5, dan 7 yang melakukan transpose. Nilai 0,
+    # 2, 4, dan 6 tidak. Kalau proc_width dan proc_height diubah menjadi
+    # potret tanpa transpose, setiap bingkai keluar gepeng dan MediaPipe
+    # memberi 0 persen deteksi.
     #
     # Baris "[Kamera] bingkai pertama WxH" tidak bisa membedakan kondisi
-    # benar dari kondisi gepeng, karena keduanya menghasilkan WxH yang sama.
-    # Karena itu pemeriksaannya harus dilakukan di sini, sebelum satu
-    # bingkai pun diproses.
+    # benar dari kondisi gepeng, karena keduanya menghasilkan WxH sama.
     _transpose = flip_method in (1, 3, 5, 7)
     _src_w, _src_h = (height, width) if _transpose else (width, height)
     _rasio_src = _src_w / float(_src_h)
     _rasio_out = pw / float(ph)
-    RUNTIME["aspect_ok"] = abs(_rasio_src - _rasio_out) <= 0.01
-    RUNTIME["aspect_ratio_src"] = _rasio_src
-    RUNTIME["aspect_ratio_out"] = _rasio_out
-    if not RUNTIME["aspect_ok"]:
-        _regang = _rasio_src / _rasio_out
+    if abs(_rasio_src - _rasio_out) > 0.01:
         print("")
         print("=" * 66)
         print("[Kamera] PERINGATAN RASIO ASPEK - BINGKAI AKAN DIREGANGKAN")
         print("=" * 66)
-        print("  csi_flip_method   : %d  (transpose=%s)"
+        print("  csi_flip_method     : %d  (transpose=%s)"
               % (flip_method, "ya" if _transpose else "TIDAK"))
         print("  Sumber sesudah flip : %d x %d  (rasio %.3f)"
               % (_src_w, _src_h, _rasio_src))
         print("  Caps keluaran proc_ : %d x %d  (rasio %.3f)"
               % (pw, ph, _rasio_out))
-        print("  Skala mendatar    : %.3f" % (pw / float(_src_w)))
-        print("  Skala tegak       : %.3f" % (ph / float(_src_h)))
-        print("  Distorsi rasio    : %.2f kali" % _regang)
+        print("  Distorsi rasio      : %.2f kali"
+              % (_rasio_src / _rasio_out))
         print("")
         print("  Deteksi wajah kemungkinan besar akan 0 persen.")
-        print("  Perbaiki salah satu di config/default.yaml:")
-        if not _transpose and _rasio_out < 1.0:
-            print("    - Putar modul kamera 90 derajat secara FISIK, lalu")
-            print("      set csi_flip_method: 1  (kalau terbalik, pakai 3).")
-            print("    - Atau kembalikan proc_width: %d dan proc_height: %d"
-                  % (_src_w, _src_h))
-        else:
-            print("    - Samakan proc_width/proc_height dengan rasio %.3f,"
-                  % _rasio_src)
-            print("      misalnya %d x %d."
-                  % (pw, int(round(pw / _rasio_src))))
+        print("  Samakan proc_width dan proc_height dengan rasio sumber,")
+        print("  yaitu %d x %d, lalu pakai portrait_mode: crop untuk"
+              % (_src_w, _src_h))
+        print("  mendapatkan tampilan potret tanpa memutar apa pun.")
         print("=" * 66)
         print("")
 
@@ -819,6 +904,8 @@ def main():
     read_fail_streak = 0
     exit_reason = "permintaan pengguna"
     win = "MoodIn - Real-time Inference"
+    if DISPLAY_PORTRAIT and PORTRAIT_MODE == "crop":
+        lapor_geometri_potong()
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win, SCREEN_WIDTH, SCREEN_HEIGHT)
     fs_pending = bool(CFG["fullscreen"])
@@ -938,32 +1025,50 @@ def main():
 
         # ---- Susun tampilan potret ----
         if DISPLAY_PORTRAIT:
-            oh, ow = display.shape[:2]
             target_aspect = SCREEN_WIDTH / float(SCREEN_HEIGHT)
             if PORTRAIT_MODE == "crop":
-                # [S13] Perilaku lama. Pada bingkai 1280x720 menuju layar
-                # 600x1024, lebar potongannya hanya 720 * 600/1024 = 422
-                # piksel, yaitu sepertiga lebar bingkai. Orang tidak bisa
-                # melihat dirinya untuk membetulkan posisi, padahal wajahnya
-                # tetap terdeteksi di luar area yang tampak.
-                crop_w = int(oh * target_aspect)
-                if crop_w <= ow:
-                    sx = (ow - crop_w) // 2
-                    display = display[:, sx:sx + crop_w]
-                else:
-                    crop_h = int(ow / target_aspect)
-                    sy = max(0, (oh - crop_h) // 2)
-                    display = display[sy:sy + crop_h, :]
-                display = cv2.resize(display, (SCREEN_WIDTH, SCREEN_HEIGHT))
+                # [S16] Potong daerah potret dari bingkai mendatar.
+                #
+                # Modul IMX477 terpasang mendatar dan permanen. Memutar
+                # bingkai lewat flip-method memang mengisi layar potret
+                # tanpa peregangan, tetapi seluruh ruangan ikut miring 90
+                # derajat. Memaksa caps ke potret tanpa transpose membuat
+                # bingkai gepeng dan deteksi jatuh ke nol. Yang tersisa,
+                # dan satu-satunya yang benar, adalah membuang sisi kiri
+                # dan kanan bingkai.
+                #
+                # crop_aspect mengatur seberapa lebar daerah yang diambil.
+                # Sama dengan rasio layar berarti layar terisi penuh tanpa
+                # pita hitam, dengan medan pandang mendatar paling sempit.
+                # Lebih besar berarti medan pandang lebih lega dengan
+                # ongkos pita hitam tipis di atas dan bawah.
+                oh, ow = display.shape[:2]
+                ca = CROP_ASPECT if CROP_ASPECT > 0.0 else target_aspect
+                crop_h = oh
+                crop_w = int(round(oh * ca))
+                if crop_w > ow:
+                    crop_w = ow
+                    crop_h = min(oh, int(round(ow / ca)))
+                sisa = ow - crop_w
+                sx = int(round((sisa / 2.0) * (1.0 + CROP_OFFSET_X)))
+                sx = max(0, min(sisa, sx))
+                sy = max(0, (oh - crop_h) // 2)
+                display = display[sy:sy + crop_h, sx:sx + crop_w]
+
+            # [S16] Satu jalur penskalaan untuk semua mode. Ketika daerah
+            # potong sudah serasio layar, skala mendatar dan tegak sama
+            # besar sehingga tidak ada pita hitam yang tersisa, dan hasil
+            # akhirnya memenuhi layar tanpa distorsi.
+            oh, ow = display.shape[:2]
+            skala = min(SCREEN_WIDTH / float(ow),
+                        SCREEN_HEIGHT / float(oh))
+            nw = max(1, int(round(ow * skala)))
+            nh = max(1, int(round(oh * skala)))
+            interp = cv2.INTER_AREA if skala < 1.0 else cv2.INTER_LINEAR
+            kecil = cv2.resize(display, (nw, nh), interpolation=interp)
+            if nw == SCREEN_WIDTH and nh == SCREEN_HEIGHT:
+                display = kecil
             else:
-                # [S13] Letterbox: seluruh medan pandang kamera tetap
-                # terlihat, disusutkan dan dipusatkan di kanvas potret.
-                skala = min(SCREEN_WIDTH / float(ow),
-                            SCREEN_HEIGHT / float(oh))
-                nw = max(1, int(round(ow * skala)))
-                nh = max(1, int(round(oh * skala)))
-                kecil = cv2.resize(display, (nw, nh),
-                                   interpolation=cv2.INTER_AREA)
                 kanvas = np.zeros((SCREEN_HEIGHT, SCREEN_WIDTH, 3),
                                   dtype=display.dtype)
                 oy = (SCREEN_HEIGHT - nh) // 2
@@ -992,8 +1097,31 @@ def main():
             exit_reason = "permintaan pengguna (tombol q)"
             break
 
+    # [S17] Urutan pembongkaran yang tertib.
+    #
+    # Gejalanya: setelah semua statistik sesi tercetak, terminal menutup
+    # dengan "terminate called without an active exception" lalu "Aborted
+    # (core dumped)". Itu adalah std::terminate dari sisi C++, bukan dari
+    # Python. Penyebabnya adalah objek thread C++ yang masih joinable saat
+    # destruktornya dipanggil pada waktu interpreter dibongkar. Sumbernya
+    # graf MediaPipe beserta delegasi XNNPACK.
+    #
+    # Bukti bahwa dugaan ini tepat: pada sesi tanpa satu pun wajah
+    # terdeteksi, graf MediaPipe tidak pernah aktif penuh dan abort tidak
+    # muncul. Abort baru muncul pada sesi yang mendeteksi wajah, yaitu
+    # sesi yang juga memunculkan peringatan SymbolDatabase.GetPrototype.
+    #
+    # Penanganannya: tutup graf MediaPipe secara eksplisit lebih dulu,
+    # selagi interpreter masih hidup dan thread masih bisa di-join dengan
+    # benar, baru lepas kamera, jendela, dan MQTT.
+    if face_mesh is not None:
+        try:
+            face_mesh.close()
+        except Exception:
+            pass
     cap.release()
     cv2.destroyAllWindows()
+    cv2.waitKey(1)
     if mq is not None:
         try:
             mq.disconnect()
@@ -1018,6 +1146,16 @@ def main():
                   "sebelum menyalahkan model.")
     print("[Inference] Selesai. Sebab: " + exit_reason + ".")
     print("-" * 66)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    # [S17] Keluar tanpa membongkar interpreter. Semua sumber daya milik
+    # kita sudah dilepas dan seluruh keluaran sudah disiram ke terminal,
+    # jadi tidak ada yang hilang. Yang dihindari hanyalah destruktor
+    # pustaka pihak ketiga yang berjalan setelah titik ini dan memicu
+    # abort. Untuk sebuah program demo yang direkam, "core dumped" di
+    # layar jauh lebih merugikan daripada melewatkan pembongkaran yang
+    # memang tidak dibutuhkan lagi.
+    os._exit(0)
     return 0
 
 
