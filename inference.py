@@ -50,6 +50,28 @@ def _defaults():
     c["csi_sensor_mode"] = 1
     c["proc_width"] = 1280
     c["proc_height"] = 720
+    # [S11] Ambang deteksi wajah. 0.5 adalah bawaan MediaPipe dan terlalu
+    # ketat untuk wajah yang garis rambut atau garis rahangnya tertutup
+    # (jilbab, poni, kacamata) maupun untuk cahaya rendah di balik kaca.
+    c["face_det_conf"] = 0.3
+    c["face_trk_conf"] = 0.3
+    # [S11] Toleransi bingkai gagal deteksi sebelum buffer dikosongkan.
+    # 15 bingkai = 0,5 detik pada 30 fps.
+    c["face_miss_tolerance"] = 15
+    # [S11] Sisi terpendek kotak wajah minimum dalam piksel.
+    c["face_min_px"] = 24
+    # [S12] Penyetelan kamera untuk kondisi redup di balik stiker rubben.
+    c["csi_wbmode"] = 1
+    c["csi_gain_max"] = 16.0
+    c["csi_exposure_max_ns"] = 33000000
+    c["csi_ispgain_max"] = 8.0
+    c["csi_tune_lowlight"] = True
+    # [S13] Pratinjau potret: "crop" memotong sisi kiri-kanan (perilaku
+    # lama, menyisakan hanya sepertiga lebar bingkai), "letterbox"
+    # menyusutkan seluruh bingkai sehingga orang bisa memposisikan diri.
+    c["portrait_mode"] = "letterbox"
+    # [S14] Kegagalan baca bingkai beruntun sebelum program menyerah.
+    c["camera_read_retry"] = 30
     c["mqtt_enabled"] = True
     c["mqtt_host"] = "localhost"
     c["mqtt_port"] = 1883
@@ -97,6 +119,12 @@ RPPG_H = RPPG_W = int(CFG["rppg_size"])
 FPS_TARGET = float(CFG["fps_target"])
 SCREEN_WIDTH = int(CFG["screen_width"])
 SCREEN_HEIGHT = int(CFG["screen_height"])
+FACE_DET_CONF = float(CFG["face_det_conf"])
+FACE_TRK_CONF = float(CFG["face_trk_conf"])
+FACE_MISS_TOLERANCE = int(CFG["face_miss_tolerance"])
+FACE_MIN_PX = int(CFG["face_min_px"])
+PORTRAIT_MODE = str(CFG["portrait_mode"]).strip().lower()
+CAMERA_READ_RETRY = int(CFG["camera_read_retry"])
 DISPLAY_PORTRAIT = bool(CFG["display_portrait"])
 DEMO_MODE = bool(CFG["demo_mode"])
 DEMO_BANNER = str(CFG["demo_banner"])
@@ -123,9 +151,12 @@ try:
     mp_drawing_styles = mp.solutions.drawing_styles
     face_mesh = mp_face_mesh.FaceMesh(
         max_num_faces=1, refine_landmarks=True,
-        min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        min_detection_confidence=FACE_DET_CONF,
+        min_tracking_confidence=FACE_TRK_CONF)
     FACE_BACKEND = "mediapipe"
-    print("[FaceMesh] Backend: MediaPipe (468 landmark)")
+    print("[FaceMesh] Backend: MediaPipe (468 landmark), "
+          "det_conf=" + format(FACE_DET_CONF, ".2f")
+          + " trk_conf=" + format(FACE_TRK_CONF, ".2f"))
 except ImportError:
     print("[FaceMesh] MediaPipe tidak tersedia, mencoba dlib...")
     try:
@@ -207,8 +238,29 @@ def gstreamer_pipeline(width=None, height=None, fps=None, flip_method=None):
     mode = int(CFG["csi_sensor_mode"])
     pw = int(CFG["proc_width"])
     ph = int(CFG["proc_height"])
+
+    # [S12] Di balik kaca satu arah plus stiker rubben, cahaya yang sampai
+    # ke sensor tinggal 10-20 persen. Auto-exposure bawaan Argus membalas
+    # dengan menaikkan gain sampai berisik, atau memanjangkan waktu pajan
+    # sampai wajah yang bergerak menjadi buram. Keduanya merusak deteksi
+    # wajah, dan efeknya TIDAK seragam antar orang: kulit, rambut, dan
+    # pakaian yang lebih gelap menarik metering ke arah yang berbeda
+    # dibanding subjek yang lebih terang.
+    tune = ""
+    if bool(CFG["csi_tune_lowlight"]):
+        tune = (
+            " wbmode=" + str(int(CFG["csi_wbmode"]))
+            + " gainrange=\"1 " + format(float(CFG["csi_gain_max"]), ".1f")
+            + "\""
+            + " exposuretimerange=\"1000000 "
+            + str(int(CFG["csi_exposure_max_ns"])) + "\""
+            + " ispdigitalgainrange=\"1 "
+            + format(float(CFG["csi_ispgain_max"]), ".1f") + "\""
+            + " aeantibanding=1 tnr-mode=2 ee-mode=0"
+        )
+
     return (
-        "nvarguscamerasrc sensor-id=0 sensor-mode=" + str(mode) + " ! "
+        "nvarguscamerasrc sensor-id=0 sensor-mode=" + str(mode) + tune + " ! "
         "video/x-raw(memory:NVMM), width=(int)" + str(width) + ", "
         "height=(int)" + str(height) + ", format=(string)NV12, "
         "framerate=(fraction)" + str(fps) + "/1 ! "
@@ -254,14 +306,17 @@ def face_bbox_from_landmarks(ibug68, frame_w, frame_h,
     x0, x1 = float(xs.min()), float(xs.max())
     y0, y1 = float(ys.min()), float(ys.max())
     bw, bh = x1 - x0, y1 - y0
-    if bw < 40 or bh < 40:
+    # [S11] Ambang ini dulu 40 piksel mati. Pada bingkai 1280x720, wajah
+    # orang yang lebih pendek atau berdiri sedikit lebih jauh bisa jatuh di
+    # bawahnya dan ditolak walaupun landmark-nya sempurna.
+    if bw < FACE_MIN_PX or bh < FACE_MIN_PX:
         return None
     mx, my = margin_x * bw, margin_y * bh
     x0 = int(max(0, x0 - mx))
     y0 = int(max(0, y0 - my * 1.6))
     x1 = int(min(frame_w, x1 + mx))
     y1 = int(min(frame_h, y1 + my * 0.4))
-    if x1 - x0 < 32 or y1 - y0 < 32:
+    if x1 - x0 < FACE_MIN_PX or y1 - y0 < FACE_MIN_PX:
         return None
     return (x0, y0, x1, y1)
 
@@ -318,6 +373,7 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 RUNTIME = dict()
 RUNTIME["fps"] = 0.0
+RUNTIME["det_rate"] = 0.0
 RUNTIME["frames"] = 0
 RUNTIME["t0"] = time.time()
 
@@ -451,6 +507,16 @@ def draw_status_overlay(display_frame, mood, bpm, rr, conf, buf_fill,
                 (bx, 70), FONT, 0.44,
                 (0, 255, 0) if face_detected else (0, 80, 255), 1, cv2.LINE_AA)
 
+    # [S11] Tingkat deteksi kumulatif sesi ini. Tanpa angka ini, "kadang
+    # tidak terdeteksi" hanya kesan; dengan angka ini bisa dibandingkan
+    # antar orang dan antar posisi berdiri secara objektif.
+    dr = RUNTIME["det_rate"]
+    dr_col = (0, 255, 0) if dr >= 0.9 else (
+        (0, 200, 255) if dr >= 0.7 else (0, 80, 255))
+    cv2.putText(display_frame,
+                "Deteksi: " + format(dr * 100.0, ".0f") + "%",
+                (bx, 90), FONT, 0.44, dr_col, 1, cv2.LINE_AA)
+
     draw_demo_badge(display_frame)
 
 
@@ -517,8 +583,13 @@ def main():
     print("[Warmup] Kompilasi kernel CUDA untuk Orin (sekali saja)...")
     try:
         with torch.no_grad():
+            # [S10] model.py:60 membongkar dengan N, C, T, V = x.size().
+            # Model ini menerima EMPAT dimensi; sumbu M (jumlah orang) dari
+            # ST-GCN kanonik memang dihilangkan karena cermin hanya melayani
+            # satu wajah. Bentuk lima dimensi di sini adalah penyebab pesan
+            # "too many values to unpack (expected 4)".
             w_stgcn = torch.zeros(
-                1, 2, CLIP_LEN_STGCN, 68, 1,
+                1, 2, CLIP_LEN_STGCN, 68,
                 dtype=torch.float32, device=device)
             _ = stgcn(w_stgcn)["va"]
             w_rppg = torch.zeros(
@@ -542,15 +613,57 @@ def main():
 
     mq = connect_mqtt()
 
-    cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
-    if not cap.isOpened():
-        print("[Kamera] GStreamer CSI gagal. Fallback ke USB webcam...")
+    def probe_capture(capture, label, detik=3.0):
+        """[S14] Buktikan kamera benar-benar mengirim bingkai.
+
+        isOpened() mengembalikan True untuk pipeline nvarguscamerasrc
+        WALAUPUN tidak satu bingkai pun bisa dibaca, karena GStreamer
+        membangun pipeline secara malas. Memeriksa isOpened() saja adalah
+        sebab program ini keluar diam-diam dengan pesan penutup yang
+        menyerupai penutupan normal.
+        """
+        if not capture.isOpened():
+            print("[Kamera] " + label + ": isOpened() = False.")
+            return False
+        batas = time.time() + detik
+        percobaan = 0
+        while time.time() < batas:
+            percobaan += 1
+            ok_p, frame_p = capture.read()
+            if ok_p and frame_p is not None and frame_p.size > 0:
+                print("[Kamera] " + label + ": OK, bingkai pertama "
+                      + str(frame_p.shape[1]) + "x" + str(frame_p.shape[0])
+                      + " setelah " + str(percobaan) + " percobaan.")
+                return True
+            time.sleep(0.02)
+        print("[Kamera] " + label + ": isOpened() = True tetapi NOL bingkai "
+              "terbaca dalam " + format(detik, ".0f") + " detik "
+              "(" + str(percobaan) + " percobaan).")
+        return False
+
+    pipeline_txt = gstreamer_pipeline()
+    cap = cv2.VideoCapture(pipeline_txt, cv2.CAP_GSTREAMER)
+    if not probe_capture(cap, "CSI/Argus"):
+        cap.release()
+        print("[Kamera] Pipeline yang dicoba:")
+        print("         " + pipeline_txt)
+        print("[Kamera] Fallback ke webcam indeks "
+              + str(CFG["camera_source"]) + "...")
         cap = cv2.VideoCapture(int(CFG["camera_source"]))
-    if not cap.isOpened():
-        print("[Kamera] FATAL: tidak ada kamera terdeteksi.")
-        if mq is not None:
-            mq.disconnect()
-        return 1
+        if not probe_capture(cap, "Webcam V4L2"):
+            cap.release()
+            print("")
+            print("[Kamera] FATAL: tidak ada kamera yang mengirim bingkai.")
+            print("         Uji langsung ke driver, melewati Argus:")
+            print("           v4l2-ctl -d /dev/video0 "
+                  "--set-fmt-video=width=1920,height=1080,pixelformat=RG10 "
+                  "--stream-mmap --stream-count=10")
+            print("         Bila itu pun habis waktu, persoalannya di "
+                  "kabel pita CSI atau overlay device-tree, bukan di "
+                  "perangkat lunak.")
+            if mq is not None:
+                mq.disconnect()
+            return 1
 
     buf_stgcn = collections.deque(maxlen=CLIP_LEN_STGCN)
     buf_rppg = collections.deque(maxlen=CLIP_LEN_RPPG)
@@ -643,6 +756,13 @@ def main():
     print("")
 
     frame_count = 0
+    # [S11] Statistik deteksi per sesi. Ini alat ukurnya: tanpa angka,
+    # "kadang tidak terdeteksi" tidak bisa dibedakan dari "tidak pernah".
+    det_hit = 0
+    det_total = 0
+    miss_streak = 0
+    read_fail_streak = 0
+    exit_reason = "permintaan pengguna"
     win = "MoodIn - Real-time Inference"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win, SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -654,8 +774,19 @@ def main():
 
     while cap.isOpened():
         ok, frame = cap.read()
-        if not ok:
-            break
+        if not ok or frame is None:
+            # [S14] Satu bingkai hilang itu lumrah. Dulu baris ini langsung
+            # break, sehingga kegagalan kamera dan penekanan tombol q
+            # menghasilkan pesan penutup yang persis sama.
+            read_fail_streak += 1
+            if read_fail_streak >= CAMERA_READ_RETRY:
+                exit_reason = ("kamera berhenti mengirim bingkai ("
+                               + str(read_fail_streak)
+                               + " kegagalan beruntun)")
+                break
+            time.sleep(0.005)
+            continue
+        read_fail_streak = 0
         frame_count += 1
         tick_fps()
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -678,6 +809,10 @@ def main():
             bbox = face_bbox_from_haar(gray)
 
         face_detected = bbox is not None
+        det_total += 1
+        if face_detected:
+            det_hit += 1
+        RUNTIME["det_rate"] = det_hit / float(det_total)
 
         draw_landmarks_on_frame(display, face_lm_mp, ibug68)
         if face_detected:
@@ -692,9 +827,21 @@ def main():
             roi = crop_face_for_rppg(frame_rgb, bbox)
             if roi is not None:
                 buf_rppg.append(roi)
+            miss_streak = 0
         else:
-            buf_stgcn.clear()
-            buf_rppg.clear()
+            # [S11] INI CACAT PALING MERUSAK DI BERKAS INI. Sebelumnya SATU
+            # bingkai gagal deteksi langsung menghapus seluruh buffer, yaitu
+            # lima detik data yang sudah terkumpul. Peluang mengumpulkan 150
+            # bingkai berturut-turut adalah p pangkat 150. Pada p = 0,99
+            # peluangnya 22 persen; pada p = 0,95 peluangnya 0,05 persen.
+            # Selisih tingkat deteksi yang kecil antar orang berubah menjadi
+            # selisih raksasa dalam pengalaman pemakaian. Sekarang jeda
+            # pendek ditoleransi dan buffer dipertahankan.
+            miss_streak += 1
+            if miss_streak >= FACE_MISS_TOLERANCE:
+                if buf_stgcn or buf_rppg:
+                    buf_stgcn.clear()
+                    buf_rppg.clear()
 
         # ---- [S7] Publikasi mutu sinyal (~2 Hz) ----
         if mq is not None and frame_count % 15 == 0:
@@ -734,19 +881,40 @@ def main():
                 buf_stgcn.clear()
                 buf_rppg.clear()
 
-        # ---- Crop & resize portrait ----
+        # ---- Susun tampilan potret ----
         if DISPLAY_PORTRAIT:
             oh, ow = display.shape[:2]
             target_aspect = SCREEN_WIDTH / float(SCREEN_HEIGHT)
-            crop_w = int(oh * target_aspect)
-            if crop_w <= ow:
-                sx = (ow - crop_w) // 2
-                display = display[:, sx:sx + crop_w]
+            if PORTRAIT_MODE == "crop":
+                # [S13] Perilaku lama. Pada bingkai 1280x720 menuju layar
+                # 600x1024, lebar potongannya hanya 720 * 600/1024 = 422
+                # piksel, yaitu sepertiga lebar bingkai. Orang tidak bisa
+                # melihat dirinya untuk membetulkan posisi, padahal wajahnya
+                # tetap terdeteksi di luar area yang tampak.
+                crop_w = int(oh * target_aspect)
+                if crop_w <= ow:
+                    sx = (ow - crop_w) // 2
+                    display = display[:, sx:sx + crop_w]
+                else:
+                    crop_h = int(ow / target_aspect)
+                    sy = max(0, (oh - crop_h) // 2)
+                    display = display[sy:sy + crop_h, :]
+                display = cv2.resize(display, (SCREEN_WIDTH, SCREEN_HEIGHT))
             else:
-                crop_h = int(ow / target_aspect)
-                sy = max(0, (oh - crop_h) // 2)
-                display = display[sy:sy + crop_h, :]
-            display = cv2.resize(display, (SCREEN_WIDTH, SCREEN_HEIGHT))
+                # [S13] Letterbox: seluruh medan pandang kamera tetap
+                # terlihat, disusutkan dan dipusatkan di kanvas potret.
+                skala = min(SCREEN_WIDTH / float(ow),
+                            SCREEN_HEIGHT / float(oh))
+                nw = max(1, int(round(ow * skala)))
+                nh = max(1, int(round(oh * skala)))
+                kecil = cv2.resize(display, (nw, nh),
+                                   interpolation=cv2.INTER_AREA)
+                kanvas = np.zeros((SCREEN_HEIGHT, SCREEN_WIDTH, 3),
+                                  dtype=display.dtype)
+                oy = (SCREEN_HEIGHT - nh) // 2
+                ox = (SCREEN_WIDTH - nw) // 2
+                kanvas[oy:oy + nh, ox:ox + nw] = kecil
+                display = kanvas
 
         with state_lock:
             s_mood = state["mood"]
@@ -766,6 +934,7 @@ def main():
             apply_fullscreen(win)
             fs_pending = False
         if cv2.waitKey(1) & 0xFF == ord("q"):
+            exit_reason = "permintaan pengguna (tombol q)"
             break
 
     cap.release()
@@ -775,7 +944,25 @@ def main():
             mq.disconnect()
         except Exception:
             pass
-    print("[Inference] Selesai.")
+    # [S11] Ringkasan sesi. Angka inilah yang dipakai untuk membandingkan
+    # satu orang dengan orang lain secara objektif, bukan kesan sekilas.
+    print("")
+    print("-" * 66)
+    print("[Sesi] Bingkai diproses : " + str(det_total))
+    if det_total > 0:
+        print("[Sesi] Wajah terdeteksi : " + str(det_hit)
+              + "  (" + format(100.0 * det_hit / det_total, ".1f") + " %)")
+        p_det = det_hit / float(det_total)
+        peluang = (p_det ** CLIP_LEN_STGCN) * 100.0
+        print("[Sesi] Pada tingkat ini, peluang mengumpulkan "
+              + str(CLIP_LEN_STGCN) + " bingkai beruntun TANPA toleransi "
+              "adalah " + format(peluang, ".3f") + " %.")
+        if p_det < 0.90:
+            print("[Sesi] PERINGATAN: tingkat deteksi di bawah 90 %. "
+                  "Periksa pencahayaan, tinggi kamera, dan jarak berdiri "
+                  "sebelum menyalahkan model.")
+    print("[Inference] Selesai. Sebab: " + exit_reason + ".")
+    print("-" * 66)
     return 0
 
 
