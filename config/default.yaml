@@ -12,8 +12,8 @@ csi_fps: 30
 csi_flip_method: 2        # 2 = rotate 180; sesuaikan orientasi modul di figura
 
 csi_sensor_mode: 1        # 0 = 3840x2160@30, 1 = 1920x1080@60 (dari log Anda)
-proc_width: 1280          # nvvidconv menurunkan resolusi di GPU sebelum ke CPU
-proc_height: 720
+proc_width: 720          # nvvidconv menurunkan resolusi di GPU sebelum ke CPU
+proc_height: 1280
 
 # ---- MQTT ----
 mqtt_enabled: true
