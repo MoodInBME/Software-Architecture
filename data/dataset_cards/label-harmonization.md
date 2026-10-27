@@ -1,5 +1,7 @@
 # Harmonisasi Label -> 5 Kelas Mood (Kuadran Valence-Arousal)
 
+> **Catatan fase TA:** dokumen ini adalah asumsi kerja era GEMASTIK. Pemetaan label untuk TA menunggu keputusan bimbingan tentang luaran jalur wajah.
+
 Dataset MoodIn punya ruang label heterogen. Dokumen ini menyatukan semuanya ke skema tunggal
 (kelemahan W2). **Ini asumsi kerja - perlu disepakati tim & diselaraskan dgn proposal.**
 

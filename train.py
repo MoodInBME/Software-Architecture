@@ -20,7 +20,7 @@ def main():
     
     print("[1] CABANG EKSPRESI (ST-GCN Graph-Transformer)")
     print("    Sangat disarankan melatih ini di Kaggle T4 GPU (gratis).")
-    print("    Jalankan notebook: notebooks/ck_plus_stgcn_kaggle.ipynb")
+    print("    Jalankan notebook: notebooks/arsip-gemastik/ck_plus_stgcn_kaggle.ipynb")
     print("    Atau jalankan script lokal:")
     print("    $ python -m models.st_gcn_graph_tran.train \\\n        --config models/st_gcn_graph_tran/config.yaml\n")
     

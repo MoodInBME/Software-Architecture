@@ -1,5 +1,7 @@
 # `models/st_gcn_graph_tran`
 
+> **Catatan fase TA:** folder ini berisi jalur wajah versi GEMASTIK (ST-GCN + Graph Transformer, jendela 150 _frame_, 68 titik yang dipetakan dari MediaPipe 468). Rancangan jalur wajah TA berbeda dan menunggu keputusan bimbingan (milestone M4). Rencana kerja di bawah adalah rencana era GEMASTIK dan tidak dilanjutkan.
+
 Cabang **ekspresi** MoodIn. Memetakan urutan 150 frame landmark wajah iBUG-68 ke sepasang skalar valence dan arousal.
 
 Dokumen ini adalah rencana kerja subfolder, bukan sekadar deskripsi. Setiap berkas punya status dan pekerjaan yang tersisa.
@@ -109,7 +111,7 @@ Sekitar 15 baris. Simpan checkpoint terbaik ke `{out_dir}/stgcn_va_best.pth` bes
 | 9 | TensorRT INT8 di Jetson, `tegrastats` | 8, perangkat | Tabel 3 proposal |
 | 10 | Kalibrasi bobot fusi | 6 | `w1`, `w2` |
 
-Langkah 1-8 seluruhnya dijalankan oleh `notebooks/ck_plus_stgcn_kaggle.ipynb`.
+Langkah 1-8 seluruhnya dijalankan oleh `notebooks/arsip-gemastik/ck_plus_stgcn_kaggle.ipynb`.
 
 ---
 

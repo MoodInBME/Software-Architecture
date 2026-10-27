@@ -7,7 +7,7 @@ Dipakai oleh:
 PENTING: pemetaan MEDIAPIPE_TO_IBUG68 di bawah adalah pemetaan yang UMUM
 dipakai komunitas (FaceMesh -> dlib/iBUG 68), BUKAN angka pasti dari paper.
 Indeks WAJIB diverifikasi secara visual (overlay pada wajah nyata) sebelum
-training sungguhan -- gunakan verify_mapping(). Lihat backlog docs/ST-GCN-PLAN.md.
+training sungguhan -- gunakan verify_mapping(). Lihat backlog docs/arsip-gemastik/ST-GCN-PLAN.md.
 """
 from __future__ import annotations
 

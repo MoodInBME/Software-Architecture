@@ -37,7 +37,7 @@ def va_to_mood(valence: float, arousal: float,
 
 # Pemetaan label kategorikal dataset (AffectNet/CK+/DFEW dsb.) -> 5 kelas MoodIn.
 # CATATAN: 'surprise' ambigu (arousal tinggi, valence netral); default ke Ceria
-# tetapi sebaiknya ditinjau per-dataset. Lihat docs/ST-GCN-PLAN.md.
+# tetapi sebaiknya ditinjau per-dataset. Lihat docs/arsip-gemastik/ST-GCN-PLAN.md.
 CATEGORICAL_MAP = {
     "happy": "Ceria", "happiness": "Ceria", "joy": "Ceria", "surprise": "Ceria",
     "fear": "Cemas", "anger": "Cemas", "angry": "Cemas", "disgust": "Cemas", "contempt": "Cemas",
