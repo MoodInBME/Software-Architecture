@@ -103,3 +103,15 @@ kaggle.json
 *EULA*.pdf
 *ktm*
 *student_id*
+
+# ==========================================
+# 9. Data Partisipan Penelitian dan Rekaman Uji (ADR-14 di MoodIn-master)
+# ==========================================
+# Data primer (rekaman, sinyal, kuesioner, lembar persetujuan) disimpan di luar
+# folder repo sesuai protokol yang disetujui KEP ITS. Pola ini hanya pengaman kedua.
+**/data/primer/
+**/data_primer/
+**/data_partisipan/
+_rekaman*/
+*.edf
+*.bdf

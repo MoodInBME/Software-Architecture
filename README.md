@@ -12,7 +12,7 @@
   <a href="#6-rujukan">Rujukan</a>
 </p>
 
-Repositori ini berisi "otak" MoodIn: kode yang mengubah video wajah menjadi dua perkiraan, yaitu **tingkat stres** dan **kategori suasana hati** (_mood_). Tingkat stres diperkirakan dari sinyal denyut yang diekstraksi dari video wajah (_remote photoplethysmography_, rPPG) dan variabilitas denyut jantung (HRV). Kategori _mood_ diperkirakan dari gerak _landmark_ wajah. Inferensi berjalan lokal di NVIDIA Jetson Orin Nano Super, sedangkan pelatihan model dilakukan di GPU Kaggle atau Colab.
+Repositori ini berisi "otak" MoodIn: kode yang mengubah video wajah menjadi dua perkiraan, yaitu **tingkat stres** dan **kategori suasana hati** (_mood_). Tingkat stres diperkirakan dari sinyal denyut yang diekstraksi dari video wajah (_remote photoplethysmography_, rPPG) dan variabilitas denyut jantung (HRV). Kategori _mood_ diperkirakan dari gerak _landmark_ wajah. Inferensi berjalan lokal di NVIDIA Jetson Orin Nano Super. Pelatihan model dengan dataset publik dilakukan di GPU Kaggle atau Colab; data partisipan penelitian tidak diunggah ke layanan tersebut kecuali diizinkan protokol yang disetujui Komite Etik Penelitian (KEP) ITS.
 
 Repositori ini bagian dari proyek [MoodIn](https://github.com/MoodInBME/MoodIn-master), yang saat ini dikembangkan sebagai Proposal Tugas Akhir (Pra-TA). Kode antarmuka ada di [Interface-App](https://github.com/MoodInBME/Interface-App), dan skrip perangkat keras ada di [Hardware-Connections](https://github.com/MoodInBME/Hardware-Connections).
 
@@ -128,7 +128,7 @@ Model dilatih dan diuji dengan dataset publik lebih dulu, sebelum ada data prime
 | Aff-Wild2 | Jalur wajah                         | EULA sudah diajukan; belum dibutuhkan | —                                               |
 | CK+       | _Baseline_ jalur wajah era GEMASTIK | Tidak dipakai lagi                    | —                                               |
 
-Data primer menunggu izin etik. Berkas dataset, turunannya, dan citra wajah **tidak boleh** di-commit; pola pengecualiannya ada di `.gitignore`.
+Data primer dari partisipan penelitian baru diambil setelah persetujuan etik dari KEP ITS terbit dan tidak pernah disimpan di repo ini; aturannya ada di [etika dan data](https://github.com/MoodInBME/MoodIn-master/blob/main/docs/etika-dan-data.md) (ADR-14). Berkas dataset, turunannya, dan citra wajah **tidak boleh** di-commit; pola pengecualiannya ada di `.gitignore`.
 
 ## 5. Asal kode
 
@@ -162,7 +162,7 @@ Rujukan [2] dan [3] dipakai di kartu dataset.
 
 ## Lisensi
 
-Belum ditetapkan; menunggu keputusan bersama calon dosen pembimbing. Tanpa berkas `LICENSE`, kode di repo ini tidak dilisensikan untuk dipakai ulang.
+Belum ditetapkan; menunggu keputusan bersama calon dosen pembimbing. Tanpa berkas `LICENSE`, kode di repo ini tidak dilisensikan untuk dipakai ulang. Lisensi yang nanti dipilih hanya mencakup kode dan dokumen, bukan dataset maupun data partisipan.
 
 ---
 

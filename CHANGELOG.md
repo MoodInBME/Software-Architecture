@@ -14,6 +14,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `README.md` ditata ulang (Fase B2): banner terang/gelap, kartu dua jalur pemrosesan, dan narasi yang lebih deskriptif. Istilah diselaraskan dengan tahap Proposal Tugas Akhir (Pra-TA); "kontrak versi TA" menjadi "kontrak pesan v2".
 - `data/dataset_cards/ubfc-phys.md`, `ubfc-rppg.md`, `label-harmonization.md`, `models/st_gcn_graph_tran/README.md`, dan `docs/arsip-gemastik/README.md`: istilah "fase TA" diganti "tahap Pra-TA".
 - Rujukan path di komentar `data/preprocessing/landmark_extraction_mediapipe.py` dan `models/st_gcn_graph_tran/labels.py`, serta pesan petunjuk di `train.py`, disesuaikan dengan lokasi arsip yang baru.
+- `README.md` (Fase C1): pelatihan di Kaggle atau Colab dibatasi pada dataset publik; data primer diambil setelah persetujuan etik KEP ITS dan tidak disimpan di repo. Bagian Lisensi menegaskan bahwa lisensi tidak mencakup dataset dan data partisipan.
+- `.gitignore` (Fase C1): bagian 9 untuk folder data partisipan dan rekaman uji. **[lintas repo]** Pola yang sama ditambahkan di semua repo aktif (ADR-14 di MoodIn-master).
 
 ### Ditambahkan
 
