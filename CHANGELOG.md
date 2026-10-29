@@ -4,19 +4,22 @@ Perubahan penting pada repo ini dicatat di sini. Perubahan yang berdampak ke rep
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
-## [Unreleased] — fase Tugas Akhir
+## [Unreleased] — tahap Pra-TA
 
 ### Diubah
 
 - `README.md` ditulis ulang untuk fase TA: ruang lingkup per jalur, cara menjalankan, tabel dataset, "Asal kode", dan rujukan.
 - `data/dataset_cards/ubfc-rppg.md` diberi status pada fase TA.
 - `data/dataset_cards/label-harmonization.md` dan `models/st_gcn_graph_tran/README.md` diberi catatan bahwa isinya versi era GEMASTIK.
+- `README.md` ditata ulang (Fase B2): banner terang/gelap, kartu dua jalur pemrosesan, dan narasi yang lebih deskriptif. Istilah diselaraskan dengan tahap Proposal Tugas Akhir (Pra-TA); "kontrak versi TA" menjadi "kontrak pesan v2".
+- `data/dataset_cards/ubfc-phys.md`, `ubfc-rppg.md`, `label-harmonization.md`, `models/st_gcn_graph_tran/README.md`, dan `docs/arsip-gemastik/README.md`: istilah "fase TA" diganti "tahap Pra-TA".
 - Rujukan path di komentar `data/preprocessing/landmark_extraction_mediapipe.py` dan `models/st_gcn_graph_tran/labels.py`, serta pesan petunjuk di `train.py`, disesuaikan dengan lokasi arsip yang baru.
 
 ### Ditambahkan
 
 - Kartu dataset `data/dataset_cards/ubfc-phys.md`. Kartu `pure.md` yang sebelumnya kosong kini berisi.
 - `CHANGELOG.md` dan `docs/arsip-gemastik/README.md`.
+- `.github/readme/`: gambar README (banner, ikon, wajah suasana hati) beserta `KREDIT.md`. **[lintas repo]** Bagian dari Fase B2 di semua repo.
 
 ### Dipindah
 

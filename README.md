@@ -1,22 +1,61 @@
-# Software-Architecture
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/banner-dark.png">
+  <img alt="Software-Architecture: pemrosesan sinyal dan model MoodIn, Proposal Tugas Akhir (Pra-TA)." src=".github/readme/banner-light.png" width="100%">
+</picture>
 
-Pemrosesan sinyal dan model untuk Tugas Akhir **MoodIn**: memperkirakan tingkat stres dari sinyal denyut yang diekstraksi dari video wajah (rPPG) dan HRV, serta kategori _mood_ dari _landmark_ wajah. Inferensi berjalan lokal di NVIDIA Jetson Orin Nano Super.
+<p align="center">
+  <a href="#1-ruang-lingkup-tahap-pra-ta">Ruang lingkup</a> ·
+  <a href="#2-struktur-repo">Struktur</a> ·
+  <a href="#3-menjalankan">Menjalankan</a> ·
+  <a href="#4-dataset">Dataset</a> ·
+  <a href="#5-asal-kode">Asal kode</a> ·
+  <a href="#6-rujukan">Rujukan</a>
+</p>
 
-Bagian dari proyek [MoodIn](https://github.com/MoodInBME/MoodIn-master). Repo ini tidak memuat kode UI dan tidak memuat skrip perangkat keras.
+Repositori ini berisi "otak" MoodIn: kode yang mengubah video wajah menjadi dua perkiraan, yaitu **tingkat stres** dan **kategori suasana hati** (_mood_). Tingkat stres diperkirakan dari sinyal denyut yang diekstraksi dari video wajah (_remote photoplethysmography_, rPPG) dan variabilitas denyut jantung (HRV). Kategori _mood_ diperkirakan dari gerak _landmark_ wajah. Inferensi berjalan lokal di NVIDIA Jetson Orin Nano Super, sedangkan pelatihan model dilakukan di GPU Kaggle atau Colab.
 
-![python](https://img.shields.io/badge/python-3.12-blue?logo=python)
-![tahap](https://img.shields.io/badge/tahap-preliminary%20research-yellow)
+Repositori ini bagian dari proyek [MoodIn](https://github.com/MoodInBME/MoodIn-master), yang saat ini dikembangkan sebagai Proposal Tugas Akhir (Pra-TA). Kode antarmuka ada di [Interface-App](https://github.com/MoodInBME/Interface-App), dan skrip perangkat keras ada di [Hardware-Connections](https://github.com/MoodInBME/Hardware-Connections).
 
-> **Status (27 Okt 2026):** kode di repo ini masih versi era GEMASTIK, sama dengan tag [`gemastik-xix-2026`](https://github.com/MoodInBME/Software-Architecture/tree/gemastik-xix-2026). Pengembangan TA dimulai dari jalur fisiologis (milestone M1). Jalur wajah menunggu keputusan bimbingan (M4). Rincian metode TA ada di proposal dan belum dipublikasikan.
+<p>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-deep%20learning-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
+  <img alt="Tahap Pra-TA" src="https://img.shields.io/badge/tahap-Pra--TA%20%28proposal%29-FF9898?style=flat-square">
+  <img alt="Milestone aktif M1" src="https://img.shields.io/badge/milestone-M1-48C2FF?style=flat-square">
+</p>
 
-## 1. Ruang lingkup fase TA
+> [!NOTE]
+> **Status (28 Okt 2026):** kode di repositori ini masih versi era GEMASTIK, sama dengan tag [`gemastik-xix-2026`](https://github.com/MoodInBME/Software-Architecture/tree/gemastik-xix-2026). Pengembangan tahap Pra-TA dimulai dari jalur fisiologis (milestone M1). Jalur wajah menunggu keputusan bimbingan (M4). Rincian metode ada di dokumen Proposal Tugas Akhir dan belum dipublikasikan.
 
-| Jalur      | Keluaran                | Kode yang ada sekarang                                               | Rencana                                                       |
-| ---------- | ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Fisiologis | Tingkat stres           | `models/stc_rppg/` (STC-rPPG), pemuat UBFC-rPPG                      | M1: pemuat dataset TA, turunan HRV, klasifikasi tingkat stres |
-| Wajah      | Kategori _mood_         | `models/st_gcn_graph_tran/` dan `data/preprocessing/` (era GEMASTIK) | M4, setelah keputusan bimbingan                               |
-| Fusi       | —                       | `models/fusion/` (era GEMASTIK)                                      | Menunggu keputusan bimbingan                                  |
-| Komunikasi | Pesan MQTT ke antarmuka | `communication/` (kontrak v1.0.0)                                    | Mengikuti kontrak versi TA                                    |
+## 1. Ruang lingkup tahap Pra-TA
+
+MoodIn memakai dua jalur pemrosesan yang berjalan berdampingan. Keduanya membaca video wajah yang sama, tetapi menghasilkan keluaran yang berbeda.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/readme/ikon/jalur-fisiologis.png" width="40" alt=""><br>
+      <b>Jalur fisiologis → tingkat stres</b><br>
+      Sinyal denyut diestimasi dari perubahan warna kulit wajah yang sangat halus (rPPG), lalu diturunkan menjadi denyut jantung dan fitur HRV untuk klasifikasi tingkat stres. Jalur ini dikerjakan lebih dulu (M1).
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/readme/ikon/jalur-wajah.png" width="40" alt=""><br>
+      <b>Jalur wajah → kategori <i>mood</i></b><br>
+      Gerak <i>landmark</i> wajah dianalisis untuk memperkirakan salah satu dari lima kategori: Ceria, Rileks, Netral, Cemas, atau Tertekan. Rancangannya menunggu keputusan bimbingan (M4).<br>
+      <img src=".github/readme/mood/mood-ceria.png" width="26" alt="Ceria">
+      <img src=".github/readme/mood/mood-rileks.png" width="26" alt="Rileks">
+      <img src=".github/readme/mood/mood-netral.png" width="26" alt="Netral">
+      <img src=".github/readme/mood/mood-cemas.png" width="26" alt="Cemas">
+      <img src=".github/readme/mood/mood-tertekan.png" width="26" alt="Tertekan">
+    </td>
+  </tr>
+</table>
+
+| Jalur      | Keluaran                | Kode yang ada sekarang                                               | Rencana                                                    |
+| ---------- | ----------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Fisiologis | Tingkat stres           | `models/stc_rppg/` (STC-rPPG), pemuat UBFC-rPPG                      | M1: pemuat dataset, turunan HRV, klasifikasi tingkat stres |
+| Wajah      | Kategori _mood_         | `models/st_gcn_graph_tran/` dan `data/preprocessing/` (era GEMASTIK) | M4, setelah keputusan bimbingan                            |
+| Fusi       | —                       | `models/fusion/` (era GEMASTIK)                                      | Menunggu keputusan bimbingan                               |
+| Komunikasi | Pesan MQTT ke antarmuka | `communication/` (kontrak v1.0.0)                                    | Mengikuti kontrak pesan v2 di MoodIn-master                |
 
 ## 2. Struktur repo
 
@@ -72,19 +111,24 @@ python -m tests.main
 python -m tests.test_ditac
 ```
 
-Catatan: kedua skrip masih memakai jalur impor dari sebelum reorganisasi folder (Juli 2026), sehingga perlu diperbaiki lebih dulu. Perbaikannya dijadwalkan di M1.
+> [!WARNING]
+> Kedua skrip masih memakai jalur impor dari sebelum reorganisasi folder (Juli 2026), sehingga perlu diperbaiki lebih dulu. Perbaikannya dijadwalkan di M1.
 
 ## 4. Dataset
 
-| Dataset   | Peran                                | Status                                | Kartu                                           |
-| --------- | ------------------------------------ | ------------------------------------- | ----------------------------------------------- |
-| UBFC-Phys | Jalur fisiologis TA                  | Tersedia                              | [ubfc-phys.md](data/dataset_cards/ubfc-phys.md) |
-| PURE      | Jalur fisiologis TA, estimasi denyut | Perlu permintaan akses                | [pure.md](data/dataset_cards/pure.md)           |
-| UBFC-rPPG | STC-rPPG era GEMASTIK                | Tersedia                              | [ubfc-rppg.md](data/dataset_cards/ubfc-rppg.md) |
-| Aff-Wild2 | Jalur wajah                          | EULA sudah diajukan; belum dibutuhkan | —                                               |
-| CK+       | _Baseline_ jalur wajah era GEMASTIK  | Tidak dipakai di TA                   | —                                               |
+<img src=".github/readme/ikon/dataset.png" width="40" align="right" alt="">
 
-Data primer TA menunggu izin etik. Berkas dataset, turunannya, dan citra wajah **tidak boleh** di-commit; pola pengecualiannya ada di `.gitignore`.
+Model dilatih dan diuji dengan dataset publik lebih dulu, sebelum ada data primer. Setiap dataset punya kartu yang menjelaskan sumber, lisensi, dan cara pakainya.
+
+| Dataset   | Peran                               | Status                                | Kartu                                           |
+| --------- | ----------------------------------- | ------------------------------------- | ----------------------------------------------- |
+| UBFC-Phys | Jalur fisiologis tahap Pra-TA       | Tersedia                              | [ubfc-phys.md](data/dataset_cards/ubfc-phys.md) |
+| PURE      | Jalur fisiologis, estimasi denyut   | Perlu permintaan akses                | [pure.md](data/dataset_cards/pure.md)           |
+| UBFC-rPPG | STC-rPPG era GEMASTIK               | Tersedia                              | [ubfc-rppg.md](data/dataset_cards/ubfc-rppg.md) |
+| Aff-Wild2 | Jalur wajah                         | EULA sudah diajukan; belum dibutuhkan | —                                               |
+| CK+       | _Baseline_ jalur wajah era GEMASTIK | Tidak dipakai lagi                    | —                                               |
+
+Data primer menunggu izin etik. Berkas dataset, turunannya, dan citra wajah **tidak boleh** di-commit; pola pengecualiannya ada di `.gitignore`.
 
 ## 5. Asal kode
 
@@ -118,4 +162,15 @@ Rujukan [2] dan [3] dipakai di kartu dataset.
 
 ## Lisensi
 
-Belum ditetapkan; menunggu keputusan pembimbing. Tanpa berkas `LICENSE`, kode di repo ini tidak dilisensikan untuk dipakai ulang.
+Belum ditetapkan; menunggu keputusan bersama calon dosen pembimbing. Tanpa berkas `LICENSE`, kode di repo ini tidak dilisensikan untuk dipakai ulang.
+
+---
+
+<div align="center">
+<sub>
+Departemen Teknik Biomedik · Fakultas Teknologi Elektro dan Informatika Cerdas (FTEIC)<br>
+Institut Teknologi Sepuluh Nopember · Surabaya, Indonesia
+</sub>
+<br><br>
+<sub>Ikon antarmuka: <a href="https://tabler.io/icons">Tabler Icons</a> (MIT), lihat <a href=".github/readme/KREDIT.md">kredit aset</a>. Ikon suasana hati: desain tim MoodIn.</sub>
+</div>

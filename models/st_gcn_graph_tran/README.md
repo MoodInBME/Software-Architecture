@@ -1,6 +1,6 @@
 # `models/st_gcn_graph_tran`
 
-> **Catatan fase TA:** folder ini berisi jalur wajah versi GEMASTIK (ST-GCN + Graph Transformer, jendela 150 _frame_, 68 titik yang dipetakan dari MediaPipe 468). Rancangan jalur wajah TA berbeda dan menunggu keputusan bimbingan (milestone M4). Rencana kerja di bawah adalah rencana era GEMASTIK dan tidak dilanjutkan.
+> **Catatan tahap Pra-TA:** folder ini berisi jalur wajah versi GEMASTIK (ST-GCN + Graph Transformer, jendela 150 _frame_, 68 titik yang dipetakan dari MediaPipe 468). Rancangan jalur wajah pada proposal berbeda dan menunggu keputusan bimbingan (milestone M4). Rencana kerja di bawah adalah rencana era GEMASTIK dan tidak dilanjutkan.
 
 Cabang **ekspresi** MoodIn. Memetakan urutan 150 frame landmark wajah iBUG-68 ke sepasang skalar valence dan arousal.
 

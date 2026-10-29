@@ -4,8 +4,8 @@
 
 - **Nama:** UBFC-Phys, basis data multimodal untuk studi psikofisiologis stres sosial [1].
 - **Isi:** video wajah 56 partisipan selama tiga tugas (istirahat, berbicara, dan aritmetika), disertai sinyal fisiologis dari gelang di pergelangan tangan (BVP dan EDA).
-- **Peran di MoodIn:** dataset utama jalur fisiologis pada fase TA (milestone M1).
-- **Status:** tersedia bagi penulis TA.
+- **Peran di MoodIn:** dataset utama jalur fisiologis pada tahap Pra-TA (milestone M1).
+- **Status:** tersedia bagi mahasiswa pengusul.
 
 Struktur berkas, laju _frame_ video, dan laju sampel sinyal **dibaca langsung dari berkas dataset**, bukan diasumsikan. Kode lama di repo ini mengasumsikan 30 fps (UBFC-rPPG); asumsi itu tidak boleh dibawa ke UBFC-Phys tanpa pengecekan.
 

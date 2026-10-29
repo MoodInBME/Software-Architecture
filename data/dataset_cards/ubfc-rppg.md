@@ -1,6 +1,6 @@
 # Dataset Card - UBFC-rPPG
 
-> **Status fase TA:** dataset ini dipakai untuk STC-rPPG pada era GEMASTIK. Dataset utama jalur fisiologis pada fase TA adalah UBFC-Phys ([ubfc-phys.md](ubfc-phys.md)); pemakaian UBFC-rPPG di TA mengikuti keputusan berikutnya.
+> **Status tahap Pra-TA:** dataset ini dipakai untuk STC-rPPG pada era GEMASTIK. Dataset utama jalur fisiologis pada tahap Pra-TA adalah UBFC-Phys ([ubfc-phys.md](ubfc-phys.md)); pemakaian UBFC-rPPG selanjutnya mengikuti keputusan berikutnya.
 
 > **Catatan:** file lama `ubfc-rppg.md` keliru berisi **skrip Python + token Kaggle** (bukan
 > dokumentasi) dan **membocorkan API token**. File ini menggantikannya dengan kartu dataset yang
@@ -31,7 +31,7 @@ Parser: `data/loaders/dataset_ubfc_loader.py::load_ubfc_ground_truth`.
 - UBFC-rPPG ditujukan **khusus riset akademik**; wajib mengikuti syarat penulis asli. `[Sedang]`
 - Sumber resmi: halaman riset Universitas Bourgogne Franche-Comte. Mirror Kaggle
   (`malekdinarito/ubfc-rppg-dataset`) belum tentu membawa berkas lisensi resmi -
-  **verifikasi hak pakai & sitasi sebelum dipublikasikan** dalam laporan TA. `[Tinggi]`
+  **verifikasi hak pakai & sitasi sebelum dipublikasikan** dalam proposal atau laporan TA. `[Tinggi]`
 
 ## Sitasi (verifikasi format akhir) `[Sedang]`
 
