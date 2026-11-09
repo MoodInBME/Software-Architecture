@@ -34,6 +34,7 @@ sys.path.insert(0, ROOT)
 
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.stc_rppg.model import STCrPPG
+from models.stc_rppg.constants import HR_BAND_HZ
 from models.fusion.late_fusion import LateFusionVABridge
 from data.preprocessing.landmark_map import MEDIAPIPE_FACEMESH_TO_IBUG68
 
@@ -487,8 +488,8 @@ def crop_face_for_rppg(frame_rgb, bbox):
     return patch.astype(np.float32) / 255.0
 
 
-def bpm_from_signal(rppg_signal, fps=None, f_lo=0.7, f_hi=3.5):
-    """Ambil BPM dari puncak spektrum sinyal rPPG pada pita 42-210 BPM."""
+def bpm_from_signal(rppg_signal, fps=None, f_lo=HR_BAND_HZ[0], f_hi=HR_BAND_HZ[1]):
+    """Ambil BPM dari puncak spektrum sinyal rPPG pada pita HR_BAND_HZ (45-240 BPM)."""
     fps = FPS_TARGET if fps is None else float(fps)
     sig = np.asarray(rppg_signal, dtype=np.float64).ravel()
     n = sig.size

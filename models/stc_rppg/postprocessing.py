@@ -4,13 +4,19 @@ Perubahan dari versi asli:
 - Filter Butterworth via second-order sections (sosfiltfilt) -> stabil numerik.
 - Estimasi BPM dibatasi ke pita HR, ber-zero-pad, ber-jendela Hanning, plus
   interpolasi parabola sub-bin -> resolusi jauh lebih halus dari 14 BPM/bin.
+- Pita HR bawaan diambil dari constants.HR_BAND_HZ (0,75-4,0 Hz), satu sumber
+  yang sama dengan rugi domain frekuensi dan inferensi.
+
+Demo: `python -m models.stc_rppg.postprocessing` dari root repo.
 """
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
+from .constants import HR_BAND_HZ
+
 
 class rPPGProcessor:
-    def __init__(self, fps=30.0, lowcut=0.7, highcut=3.5, order=4):
+    def __init__(self, fps=30.0, lowcut=HR_BAND_HZ[0], highcut=HR_BAND_HZ[1], order=4):
         self.fps = float(fps)
         self.lowcut = float(lowcut)
         self.highcut = float(highcut)
@@ -19,6 +25,11 @@ class rPPGProcessor:
 
     def _design_filter(self):
         nyq = 0.5 * self.fps
+        if not 0.0 < self.lowcut < self.highcut < nyq:
+            raise ValueError(
+                f"Pita filter tidak valid: {self.lowcut}-{self.highcut} Hz "
+                f"untuk fps {self.fps} (Nyquist {nyq} Hz)."
+            )
         low = self.lowcut / nyq
         high = self.highcut / nyq
         return butter(self.order, [low, high], btype="band", output="sos")
@@ -63,7 +74,8 @@ if __name__ == "__main__":
     T, fps = 300, 30.0
     t = np.linspace(0, T / fps, T, endpoint=False)
     hr = 1.5  # 90 BPM
-    raw = np.sin(2 * np.pi * hr * t) + 0.5 * np.random.randn(T)
+    rng = np.random.default_rng(42)
+    raw = np.sin(2 * np.pi * hr * t) + 0.5 * rng.standard_normal(T)
     proc = rPPGProcessor(fps=fps)
     clean = proc.filter_signal(raw)
     print(f"Target : {hr * 60:.1f} BPM")

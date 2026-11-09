@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .constants import HR_BAND_HZ
+
+
 class STCHybridLoss(nn.Module):
-    def __init__(self, lambda_weight=0.5, fps=30.0, low=0.7, high=3.5):
+    def __init__(self, lambda_weight=0.5, fps=30.0, low=HR_BAND_HZ[0], high=HR_BAND_HZ[1]):
         super().__init__()
         self.lambda_weight = lambda_weight
         self.fps = fps
@@ -19,7 +22,7 @@ class STCHybridLoss(nn.Module):
         fft = torch.fft.rfft(sig, dim=1)
         psd = (fft.real ** 2 + fft.imag ** 2)
         
-        # 3. Filter rentang frekuensi (misal: 0.7 Hz - 3.5 Hz atau 42 - 210 BPM)
+        # 3. Batasi ke pita HR (bawaan constants.HR_BAND_HZ: 0,75-4,0 Hz atau 45-240 BPM)
         freqs = torch.fft.rfftfreq(n, d=1.0 / self.fps).to(sig.device)
         band = (freqs >= self.low) & (freqs <= self.high)
         psd = psd[:, band]

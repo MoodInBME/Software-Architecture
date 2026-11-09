@@ -4,14 +4,13 @@ Menjalankan training end-to-end: memuat data lewat UBFCrPPGDataset (split
 per-subjek 8:2), melatih model STCrPPG dengan STCHybridLoss, mengevaluasi
 error HR (MAE/RMSE) tiap epoch lewat rPPGProcessor, dan menyimpan checkpoint.
 
-Cara pakai (dijalankan sebagai modul dari root project, bukan langsung
+Cara pakai (dijalankan sebagai modul dari root repo, bukan langsung
 `python train.py`, supaya relative import `.fsfe`, `.stfe`, dst berfungsi):
 
-    python -m stc_rppg.train --config stc_rppg/config.yaml
+    python -m models.stc_rppg.train --config models/stc_rppg/config.yaml
 
-Kalau `stc_rppg` sudah jadi working directory Anda, bisa juga:
-
-    python -m train --config config.yaml   (dijalankan dari luar folder stc_rppg)
+Tanpa --config, berkas config.yaml di folder ini yang dipakai. Pita HR tidak
+diatur lewat config; nilainya di constants.HR_BAND_HZ.
 """
 import os
 import sys
@@ -33,6 +32,7 @@ try:
     from .model import STCrPPG
     from .loss import STCHybridLoss
     from .postprocessing import rPPGProcessor
+    from .constants import HR_BAND_HZ
 except ImportError:
     # Fallback: dijalankan langsung sebagai script (`python train.py`),
     # relative import gagal karena Python tidak tahu train.py ini bagian
@@ -50,6 +50,7 @@ except ImportError:
         STCrPPG = importlib.import_module(f"{_pkg_name}.model").STCrPPG
         STCHybridLoss = importlib.import_module(f"{_pkg_name}.loss").STCHybridLoss
         rPPGProcessor = importlib.import_module(f"{_pkg_name}.postprocessing").rPPGProcessor
+        HR_BAND_HZ = importlib.import_module(f"{_pkg_name}.constants").HR_BAND_HZ
     except ImportError as e:
         raise ImportError(
             f"Gagal mengimpor modul model dari package '{_pkg_name}' "
@@ -59,9 +60,32 @@ except ImportError:
         ) from e
 
 
+_LEGACY_BAND_KEYS = (("loss", "freq_low"), ("loss", "freq_high"),
+                     ("postprocessing", "lowcut"), ("postprocessing", "highcut"))
+
+
+def check_no_legacy_band_keys(cfg):
+    """Tolak config yang masih menulis pita HR sendiri.
+
+    Pita HR hanya didefinisikan di constants.HR_BAND_HZ. Config lama yang
+    masih memuat freq_low/freq_high/lowcut/highcut dihentikan dengan pesan
+    jelas, daripada nilainya diabaikan tanpa pemberitahuan.
+    """
+    found = [f"{sec}.{key}" for sec, key in _LEGACY_BAND_KEYS
+             if key in (cfg.get(sec) or {})]
+    if found:
+        raise ValueError(
+            "Config memuat kunci pita HR lama: " + ", ".join(found)
+            + f". Hapus kunci itu; pita HR ditetapkan di "
+            f"models/stc_rppg/constants.py (HR_BAND_HZ = {HR_BAND_HZ})."
+        )
+
+
 def load_config(path):
     with open(path, "r") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    check_no_legacy_band_keys(cfg)
+    return cfg
 
 
 def load_module_from_path(module_name, file_path):
@@ -311,8 +335,8 @@ def main():
     criterion = STCHybridLoss(
         lambda_weight=cfg["training"].get("lambda_weight", 0.5),
         fps=cfg["loss"].get("fps", 30.0),
-        low=cfg["loss"].get("freq_low", 0.7),
-        high=cfg["loss"].get("freq_high", 3.5),
+        low=HR_BAND_HZ[0],
+        high=HR_BAND_HZ[1],
     )
 
     optimizer = build_optimizer(model, cfg)
@@ -324,8 +348,8 @@ def main():
 
     processor = rPPGProcessor(
         fps=cfg["postprocessing"].get("fps", 30.0),
-        lowcut=cfg["postprocessing"].get("lowcut", 0.7),
-        highcut=cfg["postprocessing"].get("highcut", 3.5),
+        lowcut=HR_BAND_HZ[0],
+        highcut=HR_BAND_HZ[1],
         order=cfg["postprocessing"].get("order", 4),
     )
 

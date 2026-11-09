@@ -16,12 +16,16 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - Rujukan path di komentar `data/preprocessing/landmark_extraction_mediapipe.py` dan `models/st_gcn_graph_tran/labels.py`, serta pesan petunjuk di `train.py`, disesuaikan dengan lokasi arsip yang baru.
 - `README.md` (Fase C1): pelatihan di Kaggle atau Colab dibatasi pada dataset publik; data primer diambil setelah persetujuan etik KEP ITS dan tidak disimpan di repo. Bagian Lisensi menegaskan bahwa lisensi tidak mencakup dataset dan data partisipan.
 - `.gitignore` (Fase C1): bagian 9 untuk folder data partisipan dan rekaman uji. **[lintas repo]** Pola yang sama ditambahkan di semua repo aktif (ADR-14 di MoodIn-master).
+- Pita denyut jantung jalur fisiologis menjadi 0,75–4,0 Hz (sebelumnya 0,7–3,5 Hz) agar sama dengan rancangan Pra-TA dan paper rujukan STC-rPPG. Filter pascaproses, rugi domain frekuensi, estimasi BPM di `inference.py`, dan `models/stc_rppg/train.py` kini membaca satu konstanta yang sama.
+- `models/stc_rppg/config.yaml` tidak lagi memuat `loss.freq_low`, `loss.freq_high`, `postprocessing.lowcut`, dan `postprocessing.highcut`. Config yang masih memuat kunci itu ditolak `train.py` dengan pesan galat. Contoh perintah di docstring `train.py` disesuaikan dengan lokasi folder `models/`.
 
 ### Ditambahkan
 
 - Kartu dataset `data/dataset_cards/ubfc-phys.md`. Kartu `pure.md` yang sebelumnya kosong kini berisi.
 - `CHANGELOG.md` dan `docs/arsip-gemastik/README.md`.
 - `.github/readme/`: gambar README (banner, ikon, wajah suasana hati) beserta `KREDIT.md`. **[lintas repo]** Bagian dari Fase B2 di semua repo.
+- `models/stc_rppg/constants.py` (`HR_BAND_HZ`) sebagai satu-satunya tempat pita denyut jantung.
+- `tests/test_hr_band.py`: uji respons filter, estimasi BPM, bin pita pada rugi, dan penolakan kunci config lama. Jalankan dengan `python -m unittest tests.test_hr_band -v` dari root repo.
 
 ### Dipindah
 

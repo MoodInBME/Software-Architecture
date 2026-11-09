@@ -38,14 +38,14 @@ training:
   save_every: 1 # simpan checkpoint tiap N epoch
   log_every: 20 # print log tiap N step
 
+# Pita HR (0,75-4,0 Hz) tidak ditulis di sini. Nilainya hanya ada di
+# models/stc_rppg/constants.py (HR_BAND_HZ) dan dipakai bersama oleh loss dan
+# postprocessing. train.py menolak kunci lama freq_low, freq_high, lowcut, dan
+# highcut agar config lama tidak diam-diam memakai pita yang berbeda.
 loss:
   fps: 30.0
-  freq_low: 0.7 # Hz, batas bawah pita HR untuk loss frekuensi
-  freq_high: 3.5 # Hz, batas atas
 
 postprocessing:
   fps: 30.0
-  lowcut: 0.7 # Hz, disamakan dengan loss.freq_low
-  highcut: 3.5 # Hz, disamakan dengan loss.freq_high
   order: 4
   n_fft: 4096
