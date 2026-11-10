@@ -6,6 +6,9 @@ Perubahan dari versi asli:
   interpolasi parabola sub-bin -> resolusi jauh lebih halus dari 14 BPM/bin.
 - Pita HR bawaan diambil dari constants.HR_BAND_HZ (0,75-4,0 Hz), satu sumber
   yang sama dengan rugi domain frekuensi dan inferensi.
+- estimate_bpm() adalah satu-satunya jalur estimasi BPM (filter lalu puncak
+  spektrum). Evaluasi di train.py dan bpm_from_signal() di inference.py
+  memanggilnya, sehingga angka BPM saat validasi dan di cermin dihitung sama.
 
 Demo: `python -m models.stc_rppg.postprocessing` dari root repo.
 """
@@ -22,6 +25,10 @@ class rPPGProcessor:
         self.highcut = float(highcut)
         self.order = int(order)
         self._sos = self._design_filter()
+        # Panjang bantalan bawaan sosfiltfilt; sinyal harus lebih panjang dari ini.
+        n_sec = len(self._sos)
+        nol = min(int((self._sos[:, 2] == 0).sum()), int((self._sos[:, 5] == 0).sum()))
+        self.min_length = 3 * (2 * n_sec + 1 - nol) + 1
 
     def _design_filter(self):
         nyq = 0.5 * self.fps
@@ -39,6 +46,19 @@ class rPPGProcessor:
         x = np.asarray(data, dtype=np.float64)
         x = x - np.mean(x)
         return sosfiltfilt(self._sos, x)
+
+    def estimate_bpm(self, signal, n_fft=4096):
+        """BPM dari sinyal rPPG mentah: bandpass zero-phase lalu calculate_bpm().
+
+        Mengembalikan 0.0 bila sinyal lebih pendek dari min_length, memuat
+        NaN/inf, atau datar, sehingga pemanggil tidak perlu menangani galat.
+        """
+        x = np.asarray(signal, dtype=np.float64).ravel()
+        if x.size < self.min_length or not np.isfinite(x).all():
+            return 0.0
+        if np.std(x) < 1e-9:
+            return 0.0
+        return self.calculate_bpm(self.filter_signal(x), n_fft=n_fft)
 
     def calculate_bpm(self, filtered_signal, n_fft=4096):
         x = np.asarray(filtered_signal, dtype=np.float64)

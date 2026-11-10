@@ -104,6 +104,31 @@ class TestEstimasiBPM(unittest.TestCase):
         bpm = self.proc.calculate_bpm(raw)
         self.assertAlmostEqual(bpm, 90.0, delta=0.5)
 
+    def test_estimate_bpm_sama_dengan_filter_lalu_hitung(self):
+        raw = np.sin(2 * np.pi * 1.3 * _waktu()) + 0.3 * self.rng.standard_normal(int(DURASI_S * FPS))
+        harap = self.proc.calculate_bpm(self.proc.filter_signal(raw))
+        self.assertEqual(self.proc.estimate_bpm(raw), harap)
+
+    def test_klip_128_frame_di_antara_bin(self):
+        # 128 frame pada 30 fps: jarak bin FFT tanpa zero-padding 14,1 bpm.
+        # 77,4 bpm jatuh di antara bin 70,3 dan 84,4 bpm; estimator harus tetap dekat.
+        t = np.arange(128) / FPS
+        bpm = self.proc.estimate_bpm(np.sin(2 * np.pi * (77.4 / 60.0) * t))
+        self.assertAlmostEqual(bpm, 77.4, delta=1.0)
+
+    def test_sinyal_tidak_layak_menghasilkan_nol(self):
+        t = np.arange(128) / FPS
+        nan_sig = np.sin(2 * np.pi * 1.2 * t)
+        nan_sig[10] = np.nan
+        kasus = {
+            "terlalu pendek": np.sin(2 * np.pi * 1.2 * t[: self.proc.min_length - 1]),
+            "memuat NaN": nan_sig,
+            "datar": np.full(128, 0.5),
+        }
+        for nama, sig in kasus.items():
+            with self.subTest(kasus=nama):
+                self.assertEqual(self.proc.estimate_bpm(sig), 0.0)
+
 
 class TestRugiFrekuensi(unittest.TestCase):
     def test_bin_pita_rugi(self):
@@ -160,8 +185,23 @@ class TestInferensi(unittest.TestCase):
 
     def test_228_bpm(self):
         sig = np.sin(2 * np.pi * 3.8 * _waktu())
-        # Tanpa zero-padding, resolusi spektrum 1/60 Hz = 1 bpm.
-        self.assertAlmostEqual(self.inf.bpm_from_signal(sig, fps=FPS), 228.0, delta=1.0)
+        # Lewat rPPGProcessor.estimate_bpm(): zero-padding 4096 titik dan
+        # interpolasi parabola, jadi galat jauh di bawah 1 bpm.
+        self.assertAlmostEqual(self.inf.bpm_from_signal(sig, fps=FPS), 228.0, delta=0.5)
+
+    def test_satu_jalur_dengan_processor(self):
+        # ISU-062: inferensi dan evaluasi train.py memakai estimator yang sama.
+        rng = np.random.default_rng(SEED)
+        t = np.arange(128) / FPS
+        sig = np.sin(2 * np.pi * 1.29 * t) + 0.2 * rng.standard_normal(t.size)
+        harap = rPPGProcessor(fps=FPS).estimate_bpm(sig)
+        self.assertEqual(self.inf.bpm_from_signal(sig, fps=FPS), harap)
+
+    def test_klip_128_frame_tidak_terkuantisasi(self):
+        # Versi lama memberi 84,4 bpm (bin terdekat) untuk sinus 77,4 bpm.
+        t = np.arange(128) / FPS
+        sig = np.sin(2 * np.pi * (77.4 / 60.0) * t)
+        self.assertAlmostEqual(self.inf.bpm_from_signal(sig, fps=FPS), 77.4, delta=1.0)
 
 
 if __name__ == "__main__":

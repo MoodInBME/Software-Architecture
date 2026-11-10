@@ -18,6 +18,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `.gitignore` (Fase C1): bagian 9 untuk folder data partisipan dan rekaman uji. **[lintas repo]** Pola yang sama ditambahkan di semua repo aktif (ADR-14 di MoodIn-master).
 - Pita denyut jantung jalur fisiologis menjadi 0,75–4,0 Hz (sebelumnya 0,7–3,5 Hz) agar sama dengan rancangan Pra-TA dan paper rujukan STC-rPPG. Filter pascaproses, rugi domain frekuensi, estimasi BPM di `inference.py`, dan `models/stc_rppg/train.py` kini membaca satu konstanta yang sama.
 - `models/stc_rppg/config.yaml` tidak lagi memuat `loss.freq_low`, `loss.freq_high`, `postprocessing.lowcut`, dan `postprocessing.highcut`. Config yang masih memuat kunci itu ditolak `train.py` dengan pesan galat. Contoh perintah di docstring `train.py` disesuaikan dengan lokasi folder `models/`.
+- Estimasi BPM disatukan di `rPPGProcessor.estimate_bpm()` (filter lalu puncak spektrum ber-_zero-padding_). `bpm_from_signal()` di `inference.py` dan evaluasi di `models/stc_rppg/train.py` memanggilnya, sehingga BPM di cermin tidak lagi terkuantisasi sekitar 14 bpm pada klip 128 frame.
 
 ### Ditambahkan
 

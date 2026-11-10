@@ -20,6 +20,7 @@ PATCH 2026-08-06 (rev-b):
 from __future__ import annotations
 
 import collections
+import functools
 import os
 import sys
 import threading
@@ -35,6 +36,7 @@ sys.path.insert(0, ROOT)
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.stc_rppg.model import STCrPPG
 from models.stc_rppg.constants import HR_BAND_HZ
+from models.stc_rppg.postprocessing import rPPGProcessor
 from models.fusion.late_fusion import LateFusionVABridge
 from data.preprocessing.landmark_map import MEDIAPIPE_FACEMESH_TO_IBUG68
 
@@ -488,23 +490,22 @@ def crop_face_for_rppg(frame_rgb, bbox):
     return patch.astype(np.float32) / 255.0
 
 
+@functools.lru_cache(maxsize=8)
+def _rppg_processor(fps, f_lo, f_hi):
+    """Satu rPPGProcessor per kombinasi fps dan pita; filter tidak dirancang ulang tiap klip."""
+    return rPPGProcessor(fps=fps, lowcut=f_lo, highcut=f_hi)
+
+
 def bpm_from_signal(rppg_signal, fps=None, f_lo=HR_BAND_HZ[0], f_hi=HR_BAND_HZ[1]):
-    """Ambil BPM dari puncak spektrum sinyal rPPG pada pita HR_BAND_HZ (45-240 BPM)."""
+    """BPM dari sinyal rPPG lewat rPPGProcessor.estimate_bpm().
+
+    Jalurnya sama dengan evaluasi di models/stc_rppg/train.py: bandpass zero-phase
+    pada pita HR_BAND_HZ (45-240 BPM), jendela Hann, zero-padding 4096 titik, dan
+    interpolasi parabola. Mengembalikan 0.0 untuk sinyal yang terlalu pendek,
+    memuat NaN/inf, atau datar.
+    """
     fps = FPS_TARGET if fps is None else float(fps)
-    sig = np.asarray(rppg_signal, dtype=np.float64).ravel()
-    n = sig.size
-    if n < 8:
-        return 0.0
-    sig = sig - sig.mean()
-    if not np.isfinite(sig).all() or sig.std() < 1e-9:
-        return 0.0
-    sig = sig * np.hanning(n)
-    mag = np.abs(np.fft.rfft(sig))
-    freqs = np.fft.rfftfreq(n, d=1.0 / fps)
-    band = (freqs >= f_lo) & (freqs <= f_hi)
-    if not np.any(band):
-        return 0.0
-    return float(freqs[band][int(np.argmax(mag[band]))] * 60.0)
+    return _rppg_processor(fps, float(f_lo), float(f_hi)).estimate_bpm(rppg_signal)
 
 
 # --------------------------------------------------------------------------
