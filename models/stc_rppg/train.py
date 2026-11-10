@@ -64,6 +64,10 @@ _LEGACY_BAND_KEYS = (("loss", "freq_low"), ("loss", "freq_high"),
                      ("postprocessing", "lowcut"), ("postprocessing", "highcut"))
 
 
+# Kunci config bagian loss -> argumen STCHybridLoss.
+_LOSS_KEYS = (("freq_loss", "freq_loss"), ("softargmax_tau", "tau"), ("n_fft", "n_fft"))
+
+
 def check_no_legacy_band_keys(cfg):
     """Tolak config yang masih menulis pita HR sendiri.
 
@@ -86,6 +90,20 @@ def load_config(path):
         cfg = yaml.safe_load(f)
     check_no_legacy_band_keys(cfg)
     return cfg
+
+
+def build_criterion(cfg):
+    """STCHybridLoss dari config. Kunci opsional bagian loss diteruskan apa adanya;
+    nilai bawaannya hanya ditulis di STCHybridLoss."""
+    loss_cfg = cfg.get("loss") or {}
+    loss_kw = {arg: loss_cfg[key] for key, arg in _LOSS_KEYS if key in loss_cfg}
+    return STCHybridLoss(
+        lambda_weight=(cfg.get("training") or {}).get("lambda_weight", 0.5),
+        fps=loss_cfg.get("fps", 30.0),
+        low=HR_BAND_HZ[0],
+        high=HR_BAND_HZ[1],
+        **loss_kw,
+    )
 
 
 def load_module_from_path(module_name, file_path):
@@ -330,12 +348,9 @@ def main():
     # config secara langsung (constructor-nya masih hardcode default). Kalau
     # nanti mau dibuat konfigurable, cukup ubah signature STCrPPG.__init__.
 
-    criterion = STCHybridLoss(
-        lambda_weight=cfg["training"].get("lambda_weight", 0.5),
-        fps=cfg["loss"].get("fps", 30.0),
-        low=HR_BAND_HZ[0],
-        high=HR_BAND_HZ[1],
-    )
+    criterion = build_criterion(cfg)
+    print(f"Rugi frekuensi: {criterion.freq_loss}"
+          + (" (MAE HR, bpm)" if criterion.freq_loss == "mae_hr" else " (KL-PSD)"))
 
     optimizer = build_optimizer(model, cfg)
 

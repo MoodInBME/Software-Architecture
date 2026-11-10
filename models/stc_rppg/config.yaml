@@ -44,6 +44,12 @@ training:
 # highcut agar config lama tidak diam-diam memakai pita yang berbeda.
 loss:
   fps: 30.0
+  # Rugi domain frekuensi: mae_hr = |HR_pre - HR_gt| dalam bpm (Lin dkk. 2025,
+  # Persamaan 9; rancangan Pra-TA Persamaan 3.10-3.11). kl_psd = versi GEMASTIK,
+  # dipertahankan untuk perbandingan.
+  freq_loss: mae_hr # mae_hr | kl_psd
+  softargmax_tau: 0.05 # suhu soft-argmax; daya spektrum dinormalisasi ke puncak = 1
+  n_fft: 1024 # zero-padding FFT di dalam rugi (resolusi 0,029 Hz pada 30 fps)
 
 postprocessing:
   fps: 30.0
