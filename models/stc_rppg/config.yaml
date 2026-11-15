@@ -26,9 +26,9 @@ model:
   cdc_theta: 0.6 # koefisien central difference convolution
 
 training:
-  epochs: 30
+  epochs: 30 # Lin dkk. 2025 bagian IV-B: 30 epoch
   optimizer: adadelta # sesuai paper
-  lr: 0.0001
+  lr: 1.0 # AdaDelta lr 1,0 (paper bagian IV-B); sebelumnya 0.0001 (ISU-024)
   lambda_weight: 0.5 # lambda hybrid loss (Eq. 10), hasil tuning terbaik paper (Fig. 5)
   grad_clip_norm: 1.0 # jaring pengaman terhadap lonjakan loss_freq (lihat catatan di loss.py)
   mixed_precision: true # AMP -> hemat VRAM signifikan, penting utk GPU 15GB (Colab T4)

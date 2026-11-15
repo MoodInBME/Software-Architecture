@@ -20,6 +20,7 @@ import shutil
 import time
 import argparse
 import importlib.util
+import math
 
 import numpy as np
 import yaml
@@ -163,6 +164,23 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def check_resume_lr(optimizer, cfg, resume_path):
+    """Tolak melanjutkan checkpoint yang dilatih dengan lr berbeda dari config.
+
+    optimizer.load_state_dict() ikut memulihkan lr lama dari checkpoint, sehingga
+    perubahan training.lr di config (ISU-024) diam-diam tidak berlaku. Kurva
+    pelatihan dari checkpoint seperti itu juga tidak sah untuk dibandingkan.
+    """
+    lr_cfg = float(cfg["training"]["lr"])
+    lr_ckpt = sorted({float(g["lr"]) for g in optimizer.param_groups})
+    if any(not math.isclose(v, lr_cfg, rel_tol=1e-9) for v in lr_ckpt):
+        raise ValueError(
+            f"Checkpoint {resume_path} dilatih dengan lr {lr_ckpt}, sedangkan config "
+            f"training.lr = {lr_cfg}. Mulai dari awal (resume: null atau folder "
+            f"checkpoint baru) agar lr dari config dipakai."
+        )
 
 
 def build_optimizer(model, cfg):
@@ -395,6 +413,7 @@ def main():
             model.load_state_dict(checkpoint["model_state"])
             if "optimizer_state" in checkpoint and checkpoint["optimizer_state"] is not None:
                 optimizer.load_state_dict(checkpoint["optimizer_state"])
+                check_resume_lr(optimizer, cfg, resume_path)
             start_epoch = checkpoint.get("epoch", 0) + 1
             best_hr_mae = checkpoint.get(
                 "best_hr_mae",
