@@ -1,0 +1,25 @@
+# Akhir baris: indeks dan salinan kerja memakai LF di semua OS (laptop Windows
+# dan Jetson), sehingga skrip .sh dan .py identik di kedua tempat.
+* text=auto eol=lf
+
+# Skrip khusus Windows tetap CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Biner: tidak pernah dikonversi atau di-diff sebagai teks.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.pt binary
+*.pth binary
+*.onnx binary
+*.engine binary
+*.npy binary
+*.npz binary
+*.mp4 binary
+*.avi binary
