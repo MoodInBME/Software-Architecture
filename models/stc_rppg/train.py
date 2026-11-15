@@ -12,6 +12,7 @@ Cara pakai (dijalankan sebagai modul dari root repo, bukan langsung
 Tanpa --config, berkas config.yaml di folder ini yang dipakai. Pita HR tidak
 diatur lewat config; nilainya di constants.HR_BAND_HZ.
 """
+import csv
 import os
 import sys
 import glob
@@ -164,6 +165,27 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+HISTORY_FILE = "riwayat_pelatihan.csv"
+HISTORY_FIELDS = ("epoch", "lr", "freq_loss",
+                  "train_loss", "train_loss_time", "train_loss_freq",
+                  "val_loss", "val_loss_time", "val_loss_freq", "val_hr_mae", "val_hr_rmse")
+
+
+def append_history_csv(path, row):
+    """Tambah satu baris riwayat per epoch; header ditulis bila berkas belum ada.
+
+    L_time dan L_freq dicatat terpisah (ISU-064) agar skala keduanya dapat
+    dibandingkan dari kurva pelatihan. Satuan L_freq mengikuti freq_loss:
+    bpm untuk mae_hr, tanpa satuan untuk kl_psd.
+    """
+    baru = not os.path.exists(path) or os.path.getsize(path) == 0
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=HISTORY_FIELDS, extrasaction="ignore")
+        if baru:
+            w.writeheader()
+        w.writerow(row)
 
 
 def check_resume_lr(optimizer, cfg, resume_path):
@@ -450,13 +472,20 @@ def main():
             elapsed = time.time() - t0
 
             print(f"Epoch {epoch}/{epochs} ({elapsed:.1f}s) | "
-                  f"train_loss={train_stats['loss']:.4f} | "
-                  f"val_loss={val_stats['loss']:.4f} | "
+                  f"train_loss={train_stats['loss']:.4f} "
+                  f"(time={train_stats['loss_time']:.4f}, freq={train_stats['loss_freq']:.4f}) | "
+                  f"val_loss={val_stats['loss']:.4f} "
+                  f"(time={val_stats['loss_time']:.4f}, freq={val_stats['loss_freq']:.4f}) | "
                   f"val_HR_MAE={val_stats['hr_mae']:.2f} bpm | "
                   f"val_HR_RMSE={val_stats['hr_rmse']:.2f} bpm")
 
             history.append({"epoch": epoch, **{f"train_{k}": v for k, v in train_stats.items()},
                              **{f"val_{k}": v for k, v in val_stats.items()}})
+            append_history_csv(os.path.join(ckpt_dir, HISTORY_FILE), {
+                "lr": optimizer.param_groups[0]["lr"],
+                "freq_loss": criterion.freq_loss,
+                **history[-1],
+            })
 
             # simpan model terbaik berdasar HR MAE di test set (dicek dulu sebelum
             # checkpoint berkala, supaya best_hr_mae yang tersimpan selalu terbaru)

@@ -21,6 +21,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - Estimasi BPM disatukan di `rPPGProcessor.estimate_bpm()` (filter lalu puncak spektrum ber-_zero-padding_). `bpm_from_signal()` di `inference.py` dan evaluasi di `models/stc_rppg/train.py` memanggilnya, sehingga BPM di cermin tidak lagi terkuantisasi sekitar 14 bpm pada klip 128 frame.
 - Rugi domain frekuensi STC-rPPG kini bawaan `mae_hr`: selisih mutlak HR prediksi dan HR acuan (bpm), dengan HR prediksi dari _soft-argmax_ spektrum agar dapat diturunkan. Rugi KL-PSD versi lama tetap tersedia lewat `loss.freq_loss: kl_psd` di `models/stc_rppg/config.yaml`. Konfigurasi rugi dibangun lewat `build_criterion()` di `train.py`.
 - `models/stc_rppg/config.yaml`: `training.lr` AdaDelta menjadi 1,0 sesuai paper rujukan STC-rPPG (sebelumnya 0,0001); `training.epochs` tetap 30. `train.py` menolak melanjutkan _checkpoint_ yang dilatih dengan lr berbeda dari config, karena memuat state optimizer ikut memulihkan lr lama.
+- `models/stc_rppg/train.py`: rugi domain waktu dan domain frekuensi dicatat terpisah per epoch, di layar dan di `riwayat_pelatihan.csv` dalam folder _checkpoint_ (beserta lr dan jenis rugi frekuensi).
 
 ### Ditambahkan
 

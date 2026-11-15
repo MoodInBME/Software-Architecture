@@ -5,6 +5,8 @@ Jalankan dari root repo dengan Python 3.12:
     python -m unittest tests.test_train_config -v
 """
 
+import csv
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,6 +48,27 @@ class TestOptimizer(unittest.TestCase):
         self.assertEqual(opt_baru.param_groups[0]["lr"], 0.0001)
         with self.assertRaises(ValueError):
             train_mod.check_resume_lr(opt_baru, self.cfg, "lama.pt")
+
+
+class TestRiwayatPelatihan(unittest.TestCase):
+    def test_header_sekali_dan_kolom_terpisah(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / train_mod.HISTORY_FILE
+            for ep in (1, 2):
+                train_mod.append_history_csv(path, {
+                    "epoch": ep, "lr": 1.0, "freq_loss": "mae_hr",
+                    "train_loss": 10.6, "train_loss_time": 1.0, "train_loss_freq": 19.2,
+                    "train_data_time": 3.0,  # kolom tambahan diabaikan
+                    "val_loss": 9.0, "val_loss_time": 0.9, "val_loss_freq": 16.2,
+                    "val_hr_mae": 15.0, "val_hr_rmse": 20.0,
+                })
+            with open(path, newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(tuple(rows[0].keys()), train_mod.HISTORY_FIELDS)
+            self.assertEqual(rows[1]["epoch"], "2")
+            self.assertEqual(float(rows[0]["train_loss_freq"]), 19.2)
+            self.assertEqual(float(rows[0]["train_loss_time"]), 1.0)
 
 
 if __name__ == "__main__":
