@@ -10,7 +10,9 @@ model:
   transformer_heads: 8
   transformer_ff: 512     # dim_ff TemporalTransformer
   dropout: 0.3
-  head_type: va           # va | class | dual  (disepakati: va)
+  head_type: va           # va | class | dual | au_va  (bawaan va; au_va setelah data DISFA tersedia)
+  # AU berlabel intensitas pada DISFA (ISU-071); dipakai head_type au_va.
+  au_list: [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
 
 data:
   window_frames: 150      # ~5 detik @ 30 FPS

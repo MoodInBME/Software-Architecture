@@ -36,6 +36,9 @@ except ImportError:
 
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.st_gcn_graph_tran.losses import build_loss
+from models.st_gcn_graph_tran.au_va_heads import masked_multitask_loss
+
+DISFA_AU_LIST = [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
 
 
 def load_config(path):
@@ -43,7 +46,8 @@ def load_config(path):
         "model": {"in_channels": 2, "num_class": 5, "num_node": 68,
                   "graph_strategy": "spatial", "max_hop": 1, "t_kernel": 9,
                   "transformer_layers": 2, "transformer_heads": 8,
-                  "transformer_ff": 512, "dropout": 0.3, "head_type": "va"},
+                  "transformer_ff": 512, "dropout": 0.3, "head_type": "va",
+                  "au_list": list(DISFA_AU_LIST)},
         "data": {"window_frames": 150, "fps": 30, "neutral_radius": 0.2},
         "loss": {"alpha_va": 1.0, "beta_cls": 0.5},
         "train": {"epochs": 80, "batch_size": 16, "lr": 1e-3,
@@ -68,10 +72,13 @@ def build_model(cfg):
         transformer_heads=m["transformer_heads"],
         transformer_ff=m.get("transformer_ff", 512),
         dropout=m["dropout"], head_type=m.get("head_type", "va"),
+        n_au=len(m.get("au_list", DISFA_AU_LIST)),
     )
 
 
 def _build_loss(cfg, head_type):
+    if head_type == "au_va":
+        return masked_multitask_loss
     if head_type == "dual":
         return build_loss("dual", alpha=cfg["loss"]["alpha_va"], beta=cfg["loss"]["beta_cls"])
     return build_loss(head_type)
@@ -92,6 +99,13 @@ def sanity_check(cfg):
         loss = loss_fn(out["va"], tgt_va)
     elif head_type == "dual":
         loss = loss_fn(out, tgt_va, tgt_cls)
+    elif head_type == "au_va":
+        n_au = out["au"].shape[1]
+        tgt_au = torch.rand(4, n_au).to(device)
+        va_mask = torch.tensor([1.0, 1.0, 0.0, 0.0], device=device)  # 2 klip ber-VA
+        au_mask = torch.zeros(4, n_au, device=device)
+        au_mask[2:] = 1.0  # 2 klip ber-AU
+        loss, _ = loss_fn(out, tgt_va, va_mask, tgt_au, au_mask)
     else:
         loss = loss_fn(out["logits"], tgt_cls)
     loss.backward()
@@ -151,6 +165,12 @@ def main():
     tr = cfg["train"]
     device = tr["device"] if torch.cuda.is_available() else "cpu"
     head_type = cfg["model"].get("head_type", "va")
+    if head_type == "au_va":
+        raise SystemExit(
+            "head_type au_va dilatih dengan AffectLandmarkDataset (AFEW-VA + DISFA, label "
+            "bermask), bukan ExpressionLandmarkDataset. Loop pelatihannya belum disambungkan "
+            "ke skrip ini; uji arsitektur dengan --sanity."
+        )
 
     ds = ExpressionLandmarkDataset(
         args.manifest, clip_len=cfg["data"]["window_frames"],

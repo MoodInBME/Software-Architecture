@@ -31,6 +31,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `models/stc_rppg/constants.py` (`HR_BAND_HZ`) sebagai satu-satunya tempat pita denyut jantung.
 - `tests/test_hr_band.py`: uji respons filter, estimasi BPM, bin pita pada rugi, dan penolakan kunci config lama. Jalankan dengan `python -m unittest tests.test_hr_band -v` dari root repo.
 - `tests/test_loss_freq.py`: uji estimasi HR terdiferensialkan, rugi MAE HR, arah gradien, pilihan KL-PSD, dan pembacaan config.
+- Modul dataset afek untuk jalur wajah: `data/loaders/afew_va.py`, `data/loaders/disfa.py`, `data/loaders/openface_csv.py` (pembanding luring), `data/loaders/affect_landmark_dataset.py`, `data/loaders/subject_split.py`, `data/preprocessing/affect_windows.py`, `evaluation/affect_metrics.py`, `models/st_gcn_graph_tran/labels_tabel33.py`, `models/st_gcn_graph_tran/au_va_heads.py`, serta kartu dataset `afew-va.md` dan `disfa.md`. Data dataset tidak disimpan di repo; skrip menolak folder keluaran di dalam repo.
+- `models/st_gcn_graph_tran`: `head_type: au_va` (kepala AU dan VA sejajar, rugi bermask) di samping `va`, `class`, dan `dual`; `model.au_list` di `config.yaml`. Bawaan tetap `va`.
+- `requirements-dev.txt` (pytest) dan uji `tests/test_affect_datasets.py`, `tests/test_stgcn_au_va.py`. Jalankan `python -m pytest tests -q`.
 
 ### Dipindah
 

@@ -1,7 +1,8 @@
 """Head keluaran fleksibel untuk cabang ST-GCN.
 
 Sesuai keputusan VA-bridge, default = regresi Valence-Arousal (2 neuron). Head
-5-kelas dan dual-head disediakan untuk eksperimen/ablation.
+5-kelas dan dual-head disediakan untuk eksperimen/ablation. head_type "au_va"
+(AU dan VA sejajar, rugi bermask) ada di au_va_heads.py.
 """
 from __future__ import annotations
 
@@ -53,12 +54,19 @@ class DualHead(nn.Module):
 
 
 def build_head(head_type: str, in_dim: int, num_class: int = 5,
-               hidden: int = 128, dropout: float = 0.3) -> nn.Module:
+               hidden: int = 128, dropout: float = 0.3, n_au: int = 12) -> nn.Module:
     head_type = head_type.lower()
+    if head_type == "au_va":
+        # Impor di sini: au_va_heads mengimpor VAHead dari modul ini.
+        try:
+            from .au_va_heads import AUVAHead
+        except ImportError:  # dijalankan sebagai skrip lepas
+            from au_va_heads import AUVAHead
+        return AUVAHead(in_dim, n_au=n_au, hidden=hidden, dropout=dropout)
     if head_type == "va":
         return VAHead(in_dim, hidden, dropout)
     if head_type in ("class", "cls", "categorical"):
         return ClassHead(in_dim, num_class, dropout)
     if head_type == "dual":
         return DualHead(in_dim, num_class, hidden, dropout)
-    raise ValueError(f"head_type tak dikenal: {head_type!r} (pilih: va|class|dual)")
+    raise ValueError(f"head_type tak dikenal: {head_type!r} (pilih: va|class|dual|au_va)")

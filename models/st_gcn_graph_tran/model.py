@@ -5,6 +5,7 @@ Revisi (VA-bridge) atas versi awal:
   * Head fleksibel via `head_type` (va | class | dual). Default 'va' (regresi
     valence-arousal) sesuai alur fusion yang disepakati.
   * forward() mengembalikan dict: {'va': (B,2)} atau {'logits': (B,5)} atau keduanya.
+  * head_type 'au_va': {'au': (B, n_au), 'va': (B, 2)}; n_au = panjang au_list di config.
 
 Kompatibel dengan komponen yang sudah ada:
   * st_gcn_block.STGCNBlock(in, out, k_num, t_kernel, stride, residual, dropout)
@@ -32,7 +33,7 @@ class STGCN_GraphTransformer(nn.Module):
     def __init__(self, in_channels=2, num_class=5, num_node=68,
                  graph_strategy="spatial", max_hop=1, t_kernel=9,
                  transformer_layers=2, transformer_heads=8, transformer_ff=512,
-                 dropout=0.3, head_type="va"):
+                 dropout=0.3, head_type="va", n_au=12):
         super().__init__()
         self.head_type = head_type.lower()
         graph = FaceGraph(num_node=num_node, strategy=graph_strategy, max_hop=max_hop)
@@ -53,7 +54,8 @@ class STGCN_GraphTransformer(nn.Module):
             d_model=256, nhead=transformer_heads,
             num_layers=transformer_layers, dim_ff=transformer_ff, dropout=dropout,
         )
-        self.head = build_head(self.head_type, 256, num_class=num_class, dropout=dropout)
+        self.head = build_head(self.head_type, 256, num_class=num_class, dropout=dropout,
+                               n_au=n_au)
 
     def forward(self, x):
         # x: (N, C, T, V)
@@ -76,7 +78,7 @@ class STGCN_GraphTransformer(nn.Module):
 
 
 if __name__ == "__main__":
-    for ht in ("va", "class", "dual"):
+    for ht in ("va", "class", "dual", "au_va"):
         m = STGCN_GraphTransformer(head_type=ht)
         y = m(torch.randn(2, 2, 150, 68))
         print(ht, {k: tuple(v.shape) for k, v in y.items()})
