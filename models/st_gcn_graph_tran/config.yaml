@@ -18,7 +18,8 @@ data:
   window_frames: 150      # ~5 detik @ 30 FPS
   fps: 30
   stride_frames: 15
-  neutral_radius: 0.2
+  mood_rule: tabel33      # tabel33 (rancangan Pra-TA) | lingkaran (arsip GEMASTIK)
+  neutral_radius: 0.2     # hanya dipakai mood_rule: lingkaran
 
 loss:
   # untuk head_type: dual

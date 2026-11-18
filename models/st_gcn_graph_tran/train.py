@@ -37,6 +37,7 @@ except ImportError:
 from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
 from models.st_gcn_graph_tran.losses import build_loss
 from models.st_gcn_graph_tran.au_va_heads import masked_multitask_loss
+from models.st_gcn_graph_tran.mood_rules import MoodRuleDataset, mood_id_function
 
 DISFA_AU_LIST = [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
 
@@ -48,7 +49,8 @@ def load_config(path):
                   "transformer_layers": 2, "transformer_heads": 8,
                   "transformer_ff": 512, "dropout": 0.3, "head_type": "va",
                   "au_list": list(DISFA_AU_LIST)},
-        "data": {"window_frames": 150, "fps": 30, "neutral_radius": 0.2},
+        "data": {"window_frames": 150, "fps": 30, "neutral_radius": 0.2,
+                 "mood_rule": "tabel33"},
         "loss": {"alpha_va": 1.0, "beta_cls": 0.5},
         "train": {"epochs": 80, "batch_size": 16, "lr": 1e-3,
                   "weight_decay": 1e-4, "device": "cuda",
@@ -113,7 +115,12 @@ def sanity_check(cfg):
     print(f"[sanity] device={device} head={head_type} out={shapes} loss={float(loss):.4f} OK")
 
 
-def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None):
+def build_mood_fn(cfg):
+    d = cfg["data"]
+    return mood_id_function(d.get("mood_rule", "tabel33"), d.get("neutral_radius", 0.2))
+
+
+def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None, mood_fn=None):
     # Lazy import: hanya diperlukan saat benar-benar melatih/evaluasi (bukan --sanity).
     from evaluation.va_metrics import evaluate_va
 
@@ -139,7 +146,8 @@ def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None):
             tgt_mood.append(mood.cpu().numpy())
     metrics = {}
     if preds:
-        metrics = evaluate_va(np.concatenate(preds), np.concatenate(tgt_va), np.concatenate(tgt_mood))
+        metrics = evaluate_va(np.concatenate(preds), np.concatenate(tgt_va),
+                              np.concatenate(tgt_mood), mood_fn=mood_fn)
     metrics["loss"] = total / len(loader.dataset)
     return metrics
 
@@ -176,6 +184,8 @@ def main():
         args.manifest, clip_len=cfg["data"]["window_frames"],
         neutral_radius=cfg["data"].get("neutral_radius", 0.2),
     )
+    mood_fn = build_mood_fn(cfg)
+    ds = MoodRuleDataset(ds, mood_fn)
     n_val = max(1, int(len(ds) * args.val_split))
     tr_ds, va_ds = random_split(ds, [len(ds) - n_val, n_val],
                                generator=torch.Generator().manual_seed(42))
@@ -192,8 +202,8 @@ def main():
     ckpt_dir = Path(tr["checkpoint_dir"]); ckpt_dir.mkdir(parents=True, exist_ok=True)
     best = -1.0
     for epoch in range(tr["epochs"]):
-        tr_m = run_epoch(model, tr_loader, loss_fn, device, head_type, opt)
-        va_m = run_epoch(model, va_loader, loss_fn, device, head_type)
+        tr_m = run_epoch(model, tr_loader, loss_fn, device, head_type, opt, mood_fn=mood_fn)
+        va_m = run_epoch(model, va_loader, loss_fn, device, head_type, mood_fn=mood_fn)
         sched.step()
         score = 0.5 * (va_m.get("ccc_valence", 0) + va_m.get("ccc_arousal", 0))
         print(f"epoch {epoch+1}/{tr['epochs']} | train_loss {tr_m['loss']:.4f} "

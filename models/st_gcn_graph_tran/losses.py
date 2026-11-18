@@ -10,6 +10,22 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+# Id mood untuk kombinasi VA yang belum tercakup aturan (mood_rules.MOOD_GAP_ID).
+MOOD_GAP_ID = -1
+
+
+class GapAwareCrossEntropy(nn.Module):
+    """CrossEntropy yang mengabaikan target MOOD_GAP_ID; batch tanpa target sah -> 0."""
+
+    def __init__(self, weight: torch.Tensor | None = None):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss(weight=weight, ignore_index=MOOD_GAP_ID)
+
+    def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if not bool((target != MOOD_GAP_ID).any()):
+            return logits.sum() * 0.0
+        return self.ce(logits, target)
+
 
 def concordance_cc(pred: torch.Tensor, target: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     """CCC untuk satu dimensi (dihitung sepanjang dimensi batch). Skalar."""
@@ -39,7 +55,7 @@ class DualLoss(nn.Module):
         self.alpha = alpha
         self.beta = beta
         self.ccc = CCCLoss()
-        self.ce = nn.CrossEntropyLoss(weight=class_weights)
+        self.ce = GapAwareCrossEntropy(class_weights)
 
     def forward(self, out: dict, target_va: torch.Tensor, target_cls: torch.Tensor) -> torch.Tensor:
         return self.alpha * self.ccc(out["va"], target_va) + self.beta * self.ce(out["logits"], target_cls)
@@ -51,7 +67,7 @@ def build_loss(head_type: str, class_weights: torch.Tensor | None = None,
     if head_type == "va":
         return CCCLoss()
     if head_type in ("class", "cls", "categorical"):
-        return nn.CrossEntropyLoss(weight=class_weights)
+        return GapAwareCrossEntropy(class_weights)
     if head_type == "dual":
         return DualLoss(alpha, beta, class_weights)
     raise ValueError(f"head_type tak dikenal: {head_type!r}")

@@ -67,7 +67,7 @@ head VA -> (N, 2), tanh -> [-1, 1]
 
 > **Belum diverifikasi.** Peta itu disusun manual dan belum pernah dicek numerik. Rencana: ambil LCK+ dari IEEE DataPort, cocokkan landmark hasil MediaPipe dengan landmark LCK+ pada wajah yang sama lewat Procrustes. RMSE ternormalisasi di atas 0,05 berarti peta salah. Ini prasyarat untuk setiap angka yang dilaporkan.
 
-**Keluaran.** `dict(va=(N, 2))`, urutan valence lalu arousal, rentang `[-1, 1]`. Kuantisasi ke mood dilakukan **di hilir** oleh `common.labels.va_to_mood` dengan `NEUTRAL_RADIUS = 0.2`. Model tidak pernah mengeluarkan label kelas.
+**Keluaran.** `dict(va=(N, 2))`, urutan valence lalu arousal, rentang `[-1, 1]`. Kuantisasi ke mood dilakukan **di hilir** menurut `data.mood_rule` di `config.yaml`: `tabel33` (bawaan, rancangan Pra-TA) atau `lingkaran` (arsip GEMASTIK, `neutral_radius`). Model tidak pernah mengeluarkan label kelas.
 
 ---
 

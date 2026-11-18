@@ -75,12 +75,17 @@ def macro_f1(y_true, y_pred, num_classes=None):
     return float(np.mean(f1s)) if f1s else 0.0
 
 
-def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RADIUS):
+def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RADIUS,
+                mood_fn=None):
     """Hitung metrik VA + mood.
 
     preds, targets_va : array (N, 2) -> kolom 0 valence, kolom 1 arousal.
     targets_mood      : array (N,) id mood 0..4 (opsional; kalau None dihitung
                         dari targets_va via kuadran).
+    mood_fn           : fungsi (v, a) -> id mood, misalnya dari
+                        models.st_gcn_graph_tran.mood_rules.mood_id_function.
+                        None = aturan lingkaran lama (neutral_radius). Id negatif
+                        (celah aturan) pada acuan dikeluarkan dari metrik mood.
     Return dict lengkap; kunci yang dipakai train.py: ccc_valence, ccc_arousal,
     mood_macro_f1.
     """
@@ -90,11 +95,17 @@ def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RAD
     ccc_v = concordance_cc(preds[:, 0], targets_va[:, 0])
     ccc_a = concordance_cc(preds[:, 1], targets_va[:, 1])
 
-    pred_mood = np.array([va_to_mood_id(v, a, neutral_radius) for v, a in preds], dtype=int)
+    if mood_fn is None:
+        def mood_fn(v, a):
+            return va_to_mood_id(v, a, neutral_radius)
+    pred_mood = np.array([mood_fn(v, a) for v, a in preds], dtype=int)
     if targets_mood is None:
-        gt_mood = np.array([va_to_mood_id(v, a, neutral_radius) for v, a in targets_va], dtype=int)
+        gt_mood = np.array([mood_fn(v, a) for v, a in targets_va], dtype=int)
     else:
         gt_mood = np.asarray(targets_mood).astype(int).ravel()
+    keep = gt_mood >= 0
+    n_excluded = int((~keep).sum())
+    pred_mood, gt_mood = pred_mood[keep], gt_mood[keep]
 
     acc = float(np.mean(pred_mood == gt_mood)) if pred_mood.size else 0.0
     return {
@@ -106,6 +117,7 @@ def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RAD
         "rmse_va": _rmse(preds, targets_va),
         "mood_accuracy": acc,
         "mood_macro_f1": macro_f1(gt_mood, pred_mood, num_classes=len(MOOD_CLASSES)),
+        "mood_n_excluded": n_excluded,
     }
 
 

@@ -35,6 +35,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `models/st_gcn_graph_tran`: `head_type: au_va` (kepala AU dan VA sejajar, rugi bermask) di samping `va`, `class`, dan `dual`; `model.au_list` di `config.yaml`. Bawaan tetap `va`.
 - `requirements-dev.txt` (pytest) dan uji `tests/test_affect_datasets.py`, `tests/test_stgcn_au_va.py`. Jalankan `python -m pytest tests -q`.
 - Docstring `labels_tabel33.py` dan kartu dataset AFEW-VA serta DISFA diringkas ke tingkat tinggi; pemeriksaan folder keluaran di `afew_va.py` dan `disfa.py` memakai `Path.is_relative_to`.
+- `models/st_gcn_graph_tran`: `data.mood_rule` di `config.yaml` (bawaan `tabel33`, pilihan `lingkaran` untuk arsip GEMASTIK). Pelatihan menghitung ulang label mood lewat `MoodRuleDataset` tanpa mengubah `expression_video_loader.py`; `evaluate_va` menerima `mood_fn` dan mengeluarkan sampel di celah aturan dari metrik mood; rugi klasifikasi mengabaikan celah itu. `labels.py` tetap ada.
 
 ### Dipindah
 
