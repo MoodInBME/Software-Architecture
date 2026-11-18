@@ -11,14 +11,13 @@
 | Landmark bawaan | 66 titik                                                                       | lihat README setelah akses                                                       |
 | Sitasi          | S. M. Mavadati dkk., IEEE Trans. Affective Computing 4(2), 2013                | M. Mavadati dkk., CVPR Workshops 2016 (prosiding, hanya sebagai rujukan dataset) |
 
-## Keputusan pemrosesan
+## Catatan pemrosesan
 
-- AU7 tidak dilabeli DISFA. Bila daftar AU naskah memuat AU7, mask AU7 selalu 0 dan AU7 tidak dilaporkan, bukan diisi tebakan.
-- 66 titik bawaan tidak dipakai. Landmark diekstrak ulang dengan ekstraktor cermin sehingga graf tetap 68 simpul dan domain masukan sama dengan inferensi.
-- 20 fps diinterpolasi ke 30 fps sebelum dipotong menjadi jendela 90 frame.
-- Pembagian data per subjek (SNxxx), lazimnya 3 lipatan subjek-independen.
-- Metrik: ICC(3,1) dan MAE per AU pada skala 0 sampai 5 (`evaluation/affect_metrics.au_report`).
-- Parser DISFA+ belum ditulis. Struktur foldernya berbeda dan akan disusun setelah README resmi diterima, bukan dari tebakan.
+- AU yang tidak dilabeli DISFA tidak diisi tebakan; label itu ditandai tidak tersedia.
+- Landmark diekstrak ulang dengan ekstraktor cermin, bukan memakai titik bawaan dataset.
+- Laju frame disamakan dengan laju frame cermin sebelum dipotong menjadi jendela.
+- Pembagian data per subjek (SNxxx).
+- Parser DISFA+ belum ditulis dan akan disusun setelah README resmi diterima.
 
 ## Pembanding OpenFace 2.0
 

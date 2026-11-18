@@ -1,15 +1,8 @@
-"""Pemetaan rating SAM skala 9 ke lima kategori mood sesuai Tabel 3.3 naskah Pra-TA.
+"""Pemetaan rating SAM skala 9 ke lima kategori mood menurut rancangan Pra-TA (Tabel 3.3).
 
-Berbeda dengan `labels.va_to_mood` era GEMASTIK (lingkaran radius 0,2 di sekitar titik asal):
-  * Netral   : 4 <= V <= 6 dan 4 <= A <= 6 (pita persegi)
-  * Ceria    : V > 5, A > 5, di luar pita Netral
-  * Rileks   : V > 5, A <= 5, di luar pita Netral
-  * Cemas    : V < 5, A > 5, di luar pita Netral
-  * Tertekan : V < 5, A <= 5, di luar pita Netral
-  * V tepat 5 di luar pita Netral: belum tercakup Tabel 3.3 (keputusan bersama dosen
-    pembimbing). Fungsi mengembalikan None agar sampel tidak masuk metrik lima kategori
-    tetapi tetap dipakai untuk CCC.
-Skala SAM 1..9 dipetakan ke [-1, 1] dengan (s - 5) / 4, sehingga pita Netral = |v| <= 0,25.
+Pengganti `labels.va_to_mood` era GEMASTIK, yang dipertahankan untuk arsip. Rincian
+aturan ada di naskah. Kombinasi yang belum tercakup aturan menghasilkan None, sehingga
+sampel itu tidak masuk metrik kategori tetapi tetap dipakai untuk metrik kontinu.
 """
 
 from __future__ import annotations

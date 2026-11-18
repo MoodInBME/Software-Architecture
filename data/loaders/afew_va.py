@@ -52,11 +52,7 @@ DEFAULT_SRC_FPS = 25.0
 
 # ----------------------------------------------------------------------------- unduh
 def _inside(path: Path, parent: Path) -> bool:
-    try:
-        path.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        return False
+    return path.resolve().is_relative_to(parent.resolve())
 
 
 def download(dest: str, agree: bool, timeout: int = 60) -> list[dict]:

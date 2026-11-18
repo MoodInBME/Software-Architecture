@@ -159,11 +159,8 @@ def main():
     ap.add_argument("--max_filled", type=float, default=0.2)
     args = ap.parse_args()
     out = Path(args.output_dir).resolve()
-    try:
-        out.relative_to(_ROOT.resolve())
+    if out.is_relative_to(_ROOT.resolve()):
         raise SystemExit("output_dir di dalam repo. Simpan klip turunan di luar repo.")
-    except ValueError:
-        pass
     os.makedirs(out, exist_ok=True)
     from data.preprocessing.landmark_extraction_mediapipe import (
         MediaPipeLandmarkExtractor,

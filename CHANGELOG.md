@@ -34,6 +34,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - Modul dataset afek untuk jalur wajah: `data/loaders/afew_va.py`, `data/loaders/disfa.py`, `data/loaders/openface_csv.py` (pembanding luring), `data/loaders/affect_landmark_dataset.py`, `data/loaders/subject_split.py`, `data/preprocessing/affect_windows.py`, `evaluation/affect_metrics.py`, `models/st_gcn_graph_tran/labels_tabel33.py`, `models/st_gcn_graph_tran/au_va_heads.py`, serta kartu dataset `afew-va.md` dan `disfa.md`. Data dataset tidak disimpan di repo; skrip menolak folder keluaran di dalam repo.
 - `models/st_gcn_graph_tran`: `head_type: au_va` (kepala AU dan VA sejajar, rugi bermask) di samping `va`, `class`, dan `dual`; `model.au_list` di `config.yaml`. Bawaan tetap `va`.
 - `requirements-dev.txt` (pytest) dan uji `tests/test_affect_datasets.py`, `tests/test_stgcn_au_va.py`. Jalankan `python -m pytest tests -q`.
+- Docstring `labels_tabel33.py` dan kartu dataset AFEW-VA serta DISFA diringkas ke tingkat tinggi; pemeriksaan folder keluaran di `afew_va.py` dan `disfa.py` memakai `Path.is_relative_to`.
 
 ### Dipindah
 

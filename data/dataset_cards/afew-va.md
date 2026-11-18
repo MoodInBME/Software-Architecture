@@ -19,11 +19,11 @@ python data/loaders/afew_va.py download --dest <di luar repo> --saya-setuju-rise
 python data/loaders/afew_va.py prepare --root <folder ekstrak> --output_dir <di luar repo> --landmarks extract
 ```
 
-`--landmarks extract` (bawaan) memakai ekstraktor yang sama dengan cermin (MediaPipe ke iBUG-68), sehingga model dilatih pada domain masukan yang sama dengan saat inferensi. Landmark anotasi (`gt`) dipakai untuk mengukur NME ekstraktor (`evaluation/affect_metrics.nme`).
+`--landmarks extract` (bawaan) memakai ekstraktor yang sama dengan cermin. Landmark anotasi (`gt`) dipakai untuk mengevaluasi ekstraktor.
 
 ## Keterbatasan
 
 - Klip film, bukan wajah di depan cermin: pose, pencahayaan, dan ekspresi lebih bervariasi daripada kondisi penelitian.
-- Klip pendek. Klip di bawah 90 frame diperpanjang dengan pengulangan frame terakhir oleh dataset loader.
-- Tidak ada label AU. Kepala AU dilatih dari DISFA, dan rugi bermask mengabaikan kepala AU untuk klip AFEW-VA.
+- Klip pendek; klip yang lebih pendek dari jendela diperpanjang oleh dataset loader.
+- Tidak ada label AU, sehingga klip AFEW-VA hanya dipakai untuk keluaran valensi-arousal.
 - Data dan klip turunan tidak boleh masuk repo, Kaggle publik, atau dibagikan ulang.
