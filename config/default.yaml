@@ -5,6 +5,15 @@
 # yang tidak ada akan memakai nilai bawaan di _defaults().
 
 # ---- Kamera ----
+# camera_backend: csi = nvarguscamerasrc (IMX477, bawaan); uvc = V4L2 (usulan
+# Logitech C920, menunggu keputusan bimbingan). Kunci kontrol UVC dulu dengan
+# scripts/kunci_kontrol_uvc.sh.
+camera_backend: csi
+uvc_device: /dev/video0
+uvc_width: 640
+uvc_height: 480
+uvc_fps: 30
+uvc_fourcc: YUYV          # tanpa kompresi, setelan sama dengan UBFC-rPPG
 camera_source: 0          # indeks fallback USB bila GStreamer CSI gagal
 csi_width: 1920           # verifikasi: v4l2-ctl --list-formats-ext -d /dev/video0
 csi_height: 1080

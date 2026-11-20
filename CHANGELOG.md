@@ -39,6 +39,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `models/fusion/late_fusion.py`: mood hanya dari jalur wajah dan dipetakan dengan aturan Tabel 3.3 (`mood_rule: tabel33`, `lingkaran` untuk arsip); HR dan HRV hanya diteruskan ke payload dan tidak lagi dicampur ke arousal; `physio_to_arousal` dihapus. Skor `confidence` diganti `decision_margin` (heuristik jarak ke batas kategori, bukan peluang), dengan histeresis khusus tampilan. Field MQTT `confidence` pada kontrak v1 diisi `decision_margin` sampai kontrak v2. Overlay `inference.py` menulis "Margin".
 - `models/st_gcn_graph_tran/mood_rules.py`: mode `label` dan `prediction`, `boundary_distance`, `decision_margin`, dan `MoodDisplayHysteresis`; modul tidak lagi bergantung pada torch. `evaluate_va` menerima `pred_mood_fn`.
 - `data/dataset_cards/label-harmonization.md` diringkas ke tingkat tinggi.
+- Pilihan backend kamera `camera_backend: csi | uvc` di `config/default.yaml` (bawaan `csi`); `uvc` membuka kamera lewat V4L2 dengan YUYV 640 × 480 pada 30 fps (usulan Logitech C920, ADR-15 di MoodIn-master). Modul baru `data/acquisition/` (`camera.py`, `frame_stats.py`). **[lintas repo]** Dokumentasi di Hardware-Connections.
+- `scripts/kunci_kontrol_uvc.sh` dan `config/uvc_kontrol.conf`: mengunci frekuensi jala-jala, eksposur, _white balance_, dan fokus pada kontrol yang tersedia saja. `scripts/uji_banding_kamera.py`: uji banding kamera yang hanya menulis CSV (selang antar-frame, frame hilang, kecerahan ROI per 10 detik), tanpa menyimpan frame.
 
 ### Dipindah
 

@@ -39,12 +39,14 @@ from models.stc_rppg.constants import HR_BAND_HZ
 from models.stc_rppg.postprocessing import rPPGProcessor
 from models.fusion.late_fusion import LateFusionVABridge
 from data.preprocessing.landmark_map import MEDIAPIPE_FACEMESH_TO_IBUG68
+from data.acquisition.camera import UvcSetting, camera_backend, open_uvc_capture
 
 CONFIG_PATH = os.path.join(ROOT, "config", "default.yaml")
 
 
 def _defaults():
     c = dict()
+    c["camera_backend"] = "csi"
     c["camera_source"] = 0
     c["csi_width"] = 1920
     c["csi_height"] = 1080
@@ -782,9 +784,20 @@ def main():
               "(" + str(percobaan) + " percobaan).")
         return False
 
-    pipeline_txt = gstreamer_pipeline()
-    cap = cv2.VideoCapture(pipeline_txt, cv2.CAP_GSTREAMER)
-    if not probe_capture(cap, "CSI/Argus"):
+    if camera_backend(CFG) == "uvc":
+        uvc = UvcSetting.from_config(CFG)
+        cap, laporan = open_uvc_capture(uvc)
+        print("[Kamera] UVC diminta " + str(uvc) + " | dipakai driver " + str(laporan))
+        if not laporan["cocok"]:
+            print("[Kamera] PERINGATAN: driver UVC tidak memakai setelan yang diminta.")
+        if not probe_capture(cap, "UVC V4L2"):
+            cap.release()
+            raise SystemExit("[Kamera] FATAL: kamera UVC tidak mengirim bingkai.")
+        pipeline_txt = None
+    else:
+        pipeline_txt = gstreamer_pipeline()
+        cap = cv2.VideoCapture(pipeline_txt, cv2.CAP_GSTREAMER)
+    if pipeline_txt is not None and not probe_capture(cap, "CSI/Argus"):
         cap.release()
         print("[Kamera] Pipeline yang dicoba:")
         print("         " + pipeline_txt)
