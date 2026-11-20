@@ -49,7 +49,7 @@ def load_config(path):
                   "transformer_layers": 2, "transformer_heads": 8,
                   "transformer_ff": 512, "dropout": 0.3, "head_type": "va",
                   "au_list": list(DISFA_AU_LIST)},
-        "data": {"window_frames": 150, "fps": 30, "neutral_radius": 0.2,
+        "data": {"window_frames": 90, "fps": 30, "neutral_radius": 0.2,
                  "mood_rule": "tabel33"},
         "loss": {"alpha_va": 1.0, "beta_cls": 0.5},
         "train": {"epochs": 80, "batch_size": 16, "lr": 1e-3,

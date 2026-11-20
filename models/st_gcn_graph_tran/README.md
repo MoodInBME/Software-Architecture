@@ -1,8 +1,8 @@
 # `models/st_gcn_graph_tran`
 
-> **Catatan tahap Pra-TA:** folder ini berisi jalur wajah versi GEMASTIK (ST-GCN + Graph Transformer, jendela 150 _frame_, 68 titik yang dipetakan dari MediaPipe 468). Rancangan jalur wajah pada proposal berbeda dan menunggu keputusan bimbingan (milestone M4). Rencana kerja di bawah adalah rencana era GEMASTIK dan tidak dilanjutkan.
+> **Catatan tahap Pra-TA:** folder ini berisi jalur wajah versi GEMASTIK (ST-GCN + Graph Transformer, jendela 150 _frame_ pada era GEMASTIK dan kini 90 _frame_, 68 titik yang dipetakan dari MediaPipe 468). Rancangan jalur wajah pada proposal berbeda dan menunggu keputusan bimbingan (milestone M4). Rencana kerja di bawah adalah rencana era GEMASTIK dan tidak dilanjutkan.
 
-Cabang **ekspresi** MoodIn. Memetakan urutan 150 frame landmark wajah iBUG-68 ke sepasang skalar valence dan arousal.
+Cabang **ekspresi** MoodIn. Memetakan urutan T frame (bawaan 90, `data.window_frames`) landmark wajah iBUG-68 ke sepasang skalar valence dan arousal.
 
 Dokumen ini adalah rencana kerja subfolder, bukan sekadar deskripsi. Setiap berkas punya status dan pekerjaan yang tersisa.
 
@@ -24,7 +24,7 @@ Dokumen ini adalah rencana kerja subfolder, bukan sekadar deskripsi. Setiap berk
 ## 2. Arsitektur
 
 ```
-masukan (N, 2, 150, 68)
+masukan (N, 2, T, 68)
    |
    v
 BatchNorm atas simpul
@@ -61,7 +61,7 @@ head VA -> (N, 2), tanh -> [-1, 1]
 
 ## 3. Kontrak data
 
-**Masukan.** Tensor `(2, 150, 68)` float32. Landmark dipusatkan di simpul 33 dan diskalakan jarak antar-mata, sehingga invarian terhadap translasi dan skala tetapi **tidak** invarian terhadap rotasi. Rotasi kepala ditangani di preprocessing.
+**Masukan.** Tensor `(2, T, 68)` float32, T = `data.window_frames` (bawaan 90). Landmark dipusatkan di simpul 33 dan diskalakan jarak antar-mata, sehingga invarian terhadap translasi dan skala tetapi **tidak** invarian terhadap rotasi. Rotasi kepala ditangani di preprocessing.
 
 **Peta indeks iBUG-68.** jaw 0-16, alis kanan 17-21, alis kiri 22-26, batang hidung 27-30, dasar hidung 31-35, mata kanan 36-41, mata kiri 42-47, bibir luar 48-59, bibir dalam 60-67. Peta dari MediaPipe ada di `MEDIAPIPE_TO_IBUG68`.
 

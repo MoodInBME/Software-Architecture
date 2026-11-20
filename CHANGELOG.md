@@ -22,6 +22,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - Rugi domain frekuensi STC-rPPG kini bawaan `mae_hr`: selisih mutlak HR prediksi dan HR acuan (bpm), dengan HR prediksi dari _soft-argmax_ spektrum agar dapat diturunkan. Rugi KL-PSD versi lama tetap tersedia lewat `loss.freq_loss: kl_psd` di `models/stc_rppg/config.yaml`. Konfigurasi rugi dibangun lewat `build_criterion()` di `train.py`.
 - `models/stc_rppg/config.yaml`: `training.lr` AdaDelta menjadi 1,0 sesuai paper rujukan STC-rPPG (sebelumnya 0,0001); `training.epochs` tetap 30. `train.py` menolak melanjutkan _checkpoint_ yang dilatih dengan lr berbeda dari config, karena memuat state optimizer ikut memulihkan lr lama.
 - `models/stc_rppg/train.py`: rugi domain waktu dan domain frekuensi dicatat terpisah per epoch, di layar dan di `riwayat_pelatihan.csv` dalam folder _checkpoint_ (beserta lr dan jenis rugi frekuensi).
+- Jendela jalur wajah menjadi 90 _frame_ (3 detik pada 30 fps) dengan geser 15 _frame_, sebelumnya 150 _frame_: `data.window_frames` di `models/st_gcn_graph_tran/config.yaml` dan nilai bawaan `train.py`, serta `clip_len_stgcn` di `config/default.yaml` dan `inference.py`. _Checkpoint_ ST-GCN lama tetap dapat dimuat karena bobot tidak bergantung pada panjang jendela, tetapi dilatih pada 150 _frame_.
 
 ### Ditambahkan
 

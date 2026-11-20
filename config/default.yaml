@@ -30,7 +30,7 @@ mqtt_host: localhost
 mqtt_port: 1883
 
 # ---- Buffer & model ----
-clip_len_stgcn: 150       # 5 detik @30 fps
+clip_len_stgcn: 90        # 3 detik @30 fps (sama dengan data.window_frames ST-GCN)
 clip_len_rppg: 128
 stride: 15                # geser 0,5 detik per inferensi
 rppg_size: 128            # sisi ROI wajah yang masuk STC-rPPG

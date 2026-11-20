@@ -101,7 +101,7 @@ def _defaults():
     c["mqtt_enabled"] = True
     c["mqtt_host"] = "localhost"
     c["mqtt_port"] = 1883
-    c["clip_len_stgcn"] = 150
+    c["clip_len_stgcn"] = 90
     c["clip_len_rppg"] = 128
     c["stride"] = 15
     c["rppg_size"] = 128
