@@ -1,164 +1,161 @@
-"""VA-bridge: fusi late berbasis aturan antara cabang wajah (ST-GCN) dan
-cabang fisiologis (STC-rPPG).
+"""Penggabung keluaran runtime cermin: mood dari jalur wajah, data fisiologis diteruskan.
 
-Kontrak (sesuai desain proposal Bab III & docs/ipc-contract.md):
-  - Valence akhir  = valence dari wajah (rPPG tak membawa informasi valence).
-  - Arousal akhir  = kombinasi berbobot arousal-wajah + arousal-fisiologis.
-  - Mood akhir     = SATU kali pemetaan kuadran va_to_mood(valence, arousal).
+Kontrak:
+  - Valence dan arousal = keluaran jalur wajah (ST-GCN), dihaluskan EMA.
+  - Mood = pemetaan valence-arousal menurut aturan rancangan Pra-TA (``mood_rules``,
+    bawaan ``tabel33``) dengan histeresis tampilan.
+  - HR dan HRV dari jalur fisiologis TIDAK ikut menentukan mood (dua jalur paralel,
+    ISU-077). Nilainya hanya diteruskan ke payload selama belum kedaluwarsa.
+    Pemakaian HRV sebagai fitur pendukung arousal adalah eksperimen terpisah (ISU-078).
+  - ``decision_margin`` adalah heuristik jarak ke batas kategori, bukan peluang
+    terkalibrasi, sehingga tidak boleh ditampilkan sebagai persen.
 
-Modul ini SENGAJA bebas-torch (murni numpy/python) supaya:
-  - ringan untuk dijalankan real-time di edge (Jetson Orin Nano Super),
-  - mudah diuji tanpa GPU,
-  - TIDAK bergantung pada kode STC-rPPG teman Anda (hanya memakai keluaran
-    HR/HRV yang sudah menjadi kontrak antar-modul).
-
-Menangani laju sampel asinkron: wajah (cepat, ~15-30 fps) vs fisiologis
-(lambat, HR/HRV diperbarui tiap beberapa detik). Nilai fisiologis di-buffer
-dan dianggap kedaluwarsa (stale) bila melewati physio_timeout_s.
+Modul ini bebas torch (murni Python) agar ringan di Jetson dan mudah diuji.
 """
+
 from __future__ import annotations
 
+import logging
 import math
 import time
 
-try:
-    from models.st_gcn_graph_tran.labels import (
-        va_to_mood_id, MOOD_CLASSES, NEUTRAL_RADIUS,
-    )
-except Exception:  # fallback mandiri
-    MOOD_CLASSES = ["Ceria", "Cemas", "Tertekan", "Rileks", "Netral"]
-    NEUTRAL_RADIUS = 0.2
+from models.st_gcn_graph_tran.labels import MOOD_CLASSES, MOOD_TO_ID, va_to_mood_id
+from models.st_gcn_graph_tran.labels_tabel33 import BAND
+from models.st_gcn_graph_tran.mood_rules import (
+    MOOD_RULES,
+    MoodDisplayHysteresis,
+    decision_margin,
+    is_rule_gap,
+)
 
-    def va_to_mood_id(v, a, neutral_radius=NEUTRAL_RADIUS):
-        if math.hypot(v, a) <= neutral_radius:
-            return 4
-        if v >= 0 and a >= 0:
-            return 0
-        if v < 0 and a >= 0:
-            return 1
-        if v < 0 and a < 0:
-            return 2
-        return 3
+log = logging.getLogger(__name__)
+
+NEUTRAL_RADIUS_GEMASTIK = 0.2
 
 
 def _clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
 
-def physio_to_arousal(hr_bpm, hrv_ms, hr_base=70.0, hr_span=30.0,
-                      hrv_base=50.0, hrv_span=40.0, w_hr=0.6, w_hrv=0.4):
-    """Peta HR/HRV -> proxy arousal di [-1, 1].
-
-    Prinsip fisiologis: arousal naik -> HR naik & HRV (RMSSD) turun.
-      - komponen HR : (hr - hr_base) / hr_span  (positif = arousal tinggi)
-      - komponen HRV: (hrv_base - hrv) / hrv_span (HRV rendah = arousal tinggi)
-    Dihaluskan dengan tanh agar robust terhadap outlier. hrv_ms boleh None.
-    """
-    hr_term = (float(hr_bpm) - hr_base) / max(hr_span, 1e-6)
-    if hrv_ms is None:
-        arousal = hr_term
-    else:
-        hrv_term = (hrv_base - float(hrv_ms)) / max(hrv_span, 1e-6)
-        arousal = w_hr * hr_term + w_hrv * hrv_term
-    return _clamp(math.tanh(arousal))
+def _margin_lingkaran(v, a, face_conf, r=NEUTRAL_RADIUS_GEMASTIK):
+    """Skor lama era GEMASTIK (jarak radial ke lingkaran Netral), hanya untuk arsip."""
+    margin = min(1.0, abs(math.hypot(v, a) - r) / r)
+    return _clamp(face_conf * (0.5 + 0.5 * margin), 0.0, 1.0)
 
 
 class LateFusionVABridge:
-    """Menggabungkan keluaran wajah & fisiologis menjadi satu estimasi mood.
+    """Menghasilkan satu estimasi mood dari jalur wajah, ditambah data fisiologis terakhir.
 
     Parameter
     ---------
-    w_face_arousal, w_physio_arousal : bobot arousal (dinormalisasi otomatis).
-    neutral_radius : radius kuadran netral.
-    ema_alpha : faktor pemulusan EMA untuk valence/arousal akhir (0=off).
-    physio_timeout_s : ambang kedaluwarsa data fisiologis.
+    mood_rule : "tabel33" (bawaan) atau "lingkaran" (arsip GEMASTIK).
+    margin_scale : skala jarak untuk decision_margin (bawaan 0,25).
+    display_hysteresis : lebar histeresis tampilan; 0 mematikan histeresis.
+    ema_alpha : faktor pemulusan EMA untuk valence/arousal (0 = mati).
+    physio_timeout_s : ambang kedaluwarsa data fisiologis yang diteruskan.
     """
 
-    def __init__(self, w_face_arousal=0.5, w_physio_arousal=0.5,
-                 neutral_radius=NEUTRAL_RADIUS, ema_alpha=0.3,
-                 physio_timeout_s=5.0):
-        s = w_face_arousal + w_physio_arousal
-        if s <= 0:
-            raise ValueError("Total bobot arousal harus > 0")
-        self.w_face = w_face_arousal / s
-        self.w_physio = w_physio_arousal / s
-        self.neutral_radius = float(neutral_radius)
+    def __init__(
+        self,
+        mood_rule="tabel33",
+        margin_scale=BAND,
+        display_hysteresis=0.05,
+        ema_alpha=0.3,
+        physio_timeout_s=5.0,
+    ):
+        if mood_rule not in MOOD_RULES:
+            raise ValueError(
+                f"mood_rule harus salah satu dari {MOOD_RULES}, bukan {mood_rule!r}"
+            )
+        if margin_scale <= 0:
+            raise ValueError("margin_scale harus positif")
+        self.mood_rule = mood_rule
+        self.margin_scale = float(margin_scale)
+        self.display = MoodDisplayHysteresis(display_hysteresis)
         self.ema_alpha = float(ema_alpha)
         self.physio_timeout_s = float(physio_timeout_s)
-        self._physio = None  # dict {arousal, hr_bpm, hrv_ms, ts}
+        self._physio = None  # dict {hr_bpm, hrv_ms, ts}
         self._ema_v = None
         self._ema_a = None
 
     def update_physio(self, hr_bpm, hrv_ms=None, timestamp=None):
-        """Simpan sampel fisiologis terbaru (dipanggil saat rPPG menghasilkan HR)."""
+        """Simpan sampel fisiologis terbaru untuk diteruskan ke payload."""
         ts = time.monotonic() if timestamp is None else float(timestamp)
         self._physio = {
-            "arousal": physio_to_arousal(hr_bpm, hrv_ms),
             "hr_bpm": float(hr_bpm),
             "hrv_ms": None if hrv_ms is None else float(hrv_ms),
             "ts": ts,
         }
 
     def _physio_fresh(self, now):
-        return (self._physio is not None
-                and (now - self._physio["ts"]) <= self.physio_timeout_s)
+        return (
+            self._physio is not None
+            and (now - self._physio["ts"]) <= self.physio_timeout_s
+        )
 
     def _ema(self, prev, new):
         if self.ema_alpha <= 0 or prev is None:
             return new
         return self.ema_alpha * new + (1 - self.ema_alpha) * prev
 
-    def fuse(self, face_valence, face_arousal, face_confidence=1.0,
-             timestamp=None, hr_bpm=None, hrv_ms=None):
-        """Hasilkan estimasi mood tergabung.
-
-        Bila hr_bpm diberikan, buffer fisiologis diperbarui lebih dulu. Bila
-        tidak, dipakai buffer terakhir selama belum kedaluwarsa.
-        Return dict siap-pakai sesuai payload inference/result ipc-contract.
-        """
+    def fuse(
+        self,
+        face_valence,
+        face_arousal,
+        face_confidence=1.0,
+        timestamp=None,
+        hr_bpm=None,
+        hrv_ms=None,
+    ):
+        """Hasilkan estimasi mood. HR/HRV hanya diteruskan, tidak memengaruhi mood."""
         now = time.monotonic() if timestamp is None else float(timestamp)
         if hr_bpm is not None:
             self.update_physio(hr_bpm, hrv_ms, now)
-
-        valence = _clamp(float(face_valence))
         fresh = self._physio_fresh(now)
-        if fresh:
-            arousal = self.w_face * float(face_arousal) + self.w_physio * self._physio["arousal"]
-            physio_used = True
-        else:
-            arousal = float(face_arousal)  # fallback: wajah saja
-            physio_used = False
-        arousal = _clamp(arousal)
 
-        # pemulusan temporal
-        self._ema_v = self._ema(self._ema_v, valence)
-        self._ema_a = self._ema(self._ema_a, arousal)
+        self._ema_v = self._ema(self._ema_v, _clamp(float(face_valence)))
+        self._ema_a = self._ema(self._ema_a, _clamp(float(face_arousal)))
         valence, arousal = _clamp(self._ema_v), _clamp(self._ema_a)
 
-        mood_id = va_to_mood_id(valence, arousal, self.neutral_radius)
-        # confidence: gabungan keyakinan wajah & jarak dari batas netral
-        dist = math.hypot(valence, arousal)
-        margin = min(1.0, abs(dist - self.neutral_radius) / max(self.neutral_radius, 1e-6))
-        confidence = _clamp(float(face_confidence) * (0.5 + 0.5 * margin), 0.0, 1.0)
+        gap = False
+        if self.mood_rule == "tabel33":
+            label = self.display.update(valence, arousal)
+            gap = is_rule_gap(valence, arousal)
+            if gap:
+                log.info(
+                    "mood_gap: v tepat 0 di luar pita Netral (a=%.3f), tampil %s",
+                    arousal,
+                    label,
+                )
+            mood_id = MOOD_TO_ID[label]
+            margin = decision_margin(
+                valence, arousal, float(face_confidence), self.margin_scale
+            )
+        else:
+            mood_id = va_to_mood_id(valence, arousal, NEUTRAL_RADIUS_GEMASTIK)
+            margin = _margin_lingkaran(valence, arousal, float(face_confidence))
 
         return {
             "mood_id": int(mood_id),
             "mood_label": MOOD_CLASSES[mood_id],
-            "confidence": round(confidence, 4),
+            "decision_margin": round(margin, 4),
+            "mood_gap": gap,
             "valence": round(valence, 4),
             "arousal": round(arousal, 4),
-            "heart_rate_bpm": (round(self._physio["hr_bpm"], 1)
-                               if (self._physio and physio_used) else None),
-            "hrv_ms": (round(self._physio["hrv_ms"], 1)
-                       if (self._physio and physio_used and self._physio["hrv_ms"] is not None)
-                       else None),
-            "physio_used": physio_used,
+            "heart_rate_bpm": round(self._physio["hr_bpm"], 1) if fresh else None,
+            "hrv_ms": (
+                round(self._physio["hrv_ms"], 1)
+                if fresh and self._physio["hrv_ms"] is not None
+                else None
+            ),
+            "physio_used": fresh,
         }
 
     def reset(self):
         self._physio = None
         self._ema_v = None
         self._ema_a = None
+        self.display.reset()
 
 
 if __name__ == "__main__":

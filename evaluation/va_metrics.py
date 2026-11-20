@@ -76,7 +76,7 @@ def macro_f1(y_true, y_pred, num_classes=None):
 
 
 def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RADIUS,
-                mood_fn=None):
+                mood_fn=None, pred_mood_fn=None):
     """Hitung metrik VA + mood.
 
     preds, targets_va : array (N, 2) -> kolom 0 valence, kolom 1 arousal.
@@ -86,6 +86,9 @@ def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RAD
                         models.st_gcn_graph_tran.mood_rules.mood_id_function.
                         None = aturan lingkaran lama (neutral_radius). Id negatif
                         (celah aturan) pada acuan dikeluarkan dari metrik mood.
+    pred_mood_fn      : fungsi untuk prediksi model; bawaan sama dengan mood_fn.
+                        Untuk tabel33 pakai mood_id_function(..., kind="prediction")
+                        agar setiap prediksi selalu mendapat kategori.
     Return dict lengkap; kunci yang dipakai train.py: ccc_valence, ccc_arousal,
     mood_macro_f1.
     """
@@ -98,7 +101,9 @@ def evaluate_va(preds, targets_va, targets_mood=None, neutral_radius=NEUTRAL_RAD
     if mood_fn is None:
         def mood_fn(v, a):
             return va_to_mood_id(v, a, neutral_radius)
-    pred_mood = np.array([mood_fn(v, a) for v, a in preds], dtype=int)
+    if pred_mood_fn is None:
+        pred_mood_fn = mood_fn
+    pred_mood = np.array([pred_mood_fn(v, a) for v, a in preds], dtype=int)
     if targets_mood is None:
         gt_mood = np.array([mood_fn(v, a) for v, a in targets_va], dtype=int)
     else:

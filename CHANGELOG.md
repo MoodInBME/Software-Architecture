@@ -36,6 +36,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `requirements-dev.txt` (pytest) dan uji `tests/test_affect_datasets.py`, `tests/test_stgcn_au_va.py`. Jalankan `python -m pytest tests -q`.
 - Docstring `labels_tabel33.py` dan kartu dataset AFEW-VA serta DISFA diringkas ke tingkat tinggi; pemeriksaan folder keluaran di `afew_va.py` dan `disfa.py` memakai `Path.is_relative_to`.
 - `models/st_gcn_graph_tran`: `data.mood_rule` di `config.yaml` (bawaan `tabel33`, pilihan `lingkaran` untuk arsip GEMASTIK). Pelatihan menghitung ulang label mood lewat `MoodRuleDataset` tanpa mengubah `expression_video_loader.py`; `evaluate_va` menerima `mood_fn` dan mengeluarkan sampel di celah aturan dari metrik mood; rugi klasifikasi mengabaikan celah itu. `labels.py` tetap ada.
+- `models/fusion/late_fusion.py`: mood hanya dari jalur wajah dan dipetakan dengan aturan Tabel 3.3 (`mood_rule: tabel33`, `lingkaran` untuk arsip); HR dan HRV hanya diteruskan ke payload dan tidak lagi dicampur ke arousal; `physio_to_arousal` dihapus. Skor `confidence` diganti `decision_margin` (heuristik jarak ke batas kategori, bukan peluang), dengan histeresis khusus tampilan. Field MQTT `confidence` pada kontrak v1 diisi `decision_margin` sampai kontrak v2. Overlay `inference.py` menulis "Margin".
+- `models/st_gcn_graph_tran/mood_rules.py`: mode `label` dan `prediction`, `boundary_distance`, `decision_margin`, dan `MoodDisplayHysteresis`; modul tidak lagi bergantung pada torch. `evaluate_va` menerima `pred_mood_fn`.
+- `data/dataset_cards/label-harmonization.md` diringkas ke tingkat tinggi.
 
 ### Dipindah
 

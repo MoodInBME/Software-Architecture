@@ -634,7 +634,7 @@ def draw_status_overlay(display_frame, mood, bpm, rr, conf, buf_fill,
     fps_now = RUNTIME["fps"]
     fps_col = (200, 200, 200) if fps_now >= FPS_TARGET * 0.8 else (0, 80, 255)
     cv2.putText(display_frame,
-                "Conf: " + format(conf, ".2f")
+                "Margin: " + format(conf, ".2f")
                 + "   FPS: " + format(fps_now, ".1f"),
                 (18, 106), FONT, 0.5, fps_col, 1, cv2.LINE_AA)
 
@@ -694,8 +694,7 @@ def main():
     stc_rppg = STCrPPG().to(device).eval()
 
     fusion = LateFusionVABridge(
-        w_face_arousal=0.5, w_physio_arousal=0.5,
-        ema_alpha=0.3, physio_timeout_s=5.0)
+        mood_rule="tabel33", ema_alpha=0.3, physio_timeout_s=5.0)
 
     weights_real = True
     for name, model, path in (("ST-GCN", stgcn, WEIGHT_STGCN),
@@ -861,7 +860,7 @@ def main():
                 state["mood"] = result["mood_label"]
                 state["bpm"] = result["heart_rate_bpm"] or bpm
                 state["rr"] = rr
-                state["confidence"] = result["confidence"]
+                state["confidence"] = result["decision_margin"]
                 state["physio_used"] = result["physio_used"]
 
             # [S4] Payload dirakit lewat kontrak resmi, bukan dict manual.
@@ -871,7 +870,9 @@ def main():
                 fields = dict()
                 fields["mood_id"] = result["mood_id"]
                 fields["mood_label"] = result["mood_label"]
-                fields["confidence"] = result["confidence"]
+                # Kontrak v1 masih bernama "confidence"; isinya decision_margin,
+                # heuristik jarak ke batas kategori, bukan peluang (ISU-079).
+                fields["confidence"] = result["decision_margin"]
                 fields["valence"] = result["valence"]
                 fields["arousal"] = result["arousal"]
                 fields["heart_rate_bpm"] = result["heart_rate_bpm"]

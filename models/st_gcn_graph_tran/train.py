@@ -115,12 +115,14 @@ def sanity_check(cfg):
     print(f"[sanity] device={device} head={head_type} out={shapes} loss={float(loss):.4f} OK")
 
 
-def build_mood_fn(cfg):
+def build_mood_fn(cfg, kind="label"):
     d = cfg["data"]
-    return mood_id_function(d.get("mood_rule", "tabel33"), d.get("neutral_radius", 0.2))
+    return mood_id_function(d.get("mood_rule", "tabel33"), d.get("neutral_radius", 0.2),
+                            kind=kind)
 
 
-def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None, mood_fn=None):
+def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None, mood_fn=None,
+              pred_mood_fn=None):
     # Lazy import: hanya diperlukan saat benar-benar melatih/evaluasi (bukan --sanity).
     from evaluation.va_metrics import evaluate_va
 
@@ -147,7 +149,8 @@ def run_epoch(model, loader, loss_fn, device, head_type, optimizer=None, mood_fn
     metrics = {}
     if preds:
         metrics = evaluate_va(np.concatenate(preds), np.concatenate(tgt_va),
-                              np.concatenate(tgt_mood), mood_fn=mood_fn)
+                              np.concatenate(tgt_mood), mood_fn=mood_fn,
+                              pred_mood_fn=pred_mood_fn)
     metrics["loss"] = total / len(loader.dataset)
     return metrics
 
@@ -185,6 +188,7 @@ def main():
         neutral_radius=cfg["data"].get("neutral_radius", 0.2),
     )
     mood_fn = build_mood_fn(cfg)
+    pred_mood_fn = build_mood_fn(cfg, kind="prediction")
     ds = MoodRuleDataset(ds, mood_fn)
     n_val = max(1, int(len(ds) * args.val_split))
     tr_ds, va_ds = random_split(ds, [len(ds) - n_val, n_val],
@@ -202,8 +206,10 @@ def main():
     ckpt_dir = Path(tr["checkpoint_dir"]); ckpt_dir.mkdir(parents=True, exist_ok=True)
     best = -1.0
     for epoch in range(tr["epochs"]):
-        tr_m = run_epoch(model, tr_loader, loss_fn, device, head_type, opt, mood_fn=mood_fn)
-        va_m = run_epoch(model, va_loader, loss_fn, device, head_type, mood_fn=mood_fn)
+        tr_m = run_epoch(model, tr_loader, loss_fn, device, head_type, opt,
+                         mood_fn=mood_fn, pred_mood_fn=pred_mood_fn)
+        va_m = run_epoch(model, va_loader, loss_fn, device, head_type,
+                         mood_fn=mood_fn, pred_mood_fn=pred_mood_fn)
         sched.step()
         score = 0.5 * (va_m.get("ccc_valence", 0) + va_m.get("ccc_arousal", 0))
         print(f"epoch {epoch+1}/{tr['epochs']} | train_loss {tr_m['loss']:.4f} "
