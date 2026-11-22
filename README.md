@@ -55,7 +55,7 @@ MoodIn memakai dua jalur pemrosesan yang berjalan berdampingan. Keduanya membaca
 | Fisiologis | Tingkat stres           | `models/stc_rppg/` (STC-rPPG), pemuat UBFC-rPPG                      | M1: pemuat dataset, turunan HRV, klasifikasi tingkat stres |
 | Wajah      | Kategori _mood_         | `models/st_gcn_graph_tran/` dan `data/preprocessing/` (era GEMASTIK) | M4, setelah keputusan bimbingan                            |
 | Fusi       | —                       | `models/fusion/` (era GEMASTIK)                                      | Menunggu keputusan bimbingan                               |
-| Komunikasi | Pesan MQTT ke antarmuka | `communication/` (kontrak v1.0.0)                                    | Mengikuti kontrak pesan v2 di MoodIn-master                |
+| Komunikasi | Pesan MQTT ke antarmuka | `communication/` (kontrak 2.0.0)                                     | Mengikuti kontrak pesan 2.0.0 di MoodIn-master             |
 
 ## 2. Struktur repo
 
@@ -70,7 +70,7 @@ Software-Architecture/
 │   ├── preprocessing/         ekstraksi landmark era GEMASTIK
 │   └── dataset_cards/         kartu dataset: sumber, lisensi, cara pakai
 ├── evaluation/                metrik valensi-arousal
-├── communication/             klien MQTT dan skema pesan (kontrak v1.0.0)
+├── communication/             klien MQTT dan skema pesan (kontrak 2.0.0)
 ├── config/default.yaml        konfigurasi inferensi
 ├── tests/                     uji bentuk tensor STC-rPPG dan DiTAC
 ├── notebooks/arsip-gemastik/  notebook pelatihan CK+ era GEMASTIK

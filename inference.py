@@ -11,7 +11,7 @@ PATCH 2026-08-06 (rev-b):
         ikut terkirim lewat MQTT, dan log awal menyatakannya eksplisit.
   [S2]  rPPG memakai crop ROI wajah, bukan seluruh frame.
   [S3]  MQTT memakai communication/mqtt_client.py (aman untuk paho 2.x).
-  [S4]  Payload dirakit lewat contracts.InferenceResult (key `ts`, `version`).
+  [S4]  Payload dirakit lewat contracts.InferenceResult (kontrak IPC 2.0.0).
   [S6]  RR ditandai sebagai estimasi turunan, bukan hasil ukur.
   [S7]  SignalQuality dan Presence ikut dipublikasikan.
   [S8]  Mode sensor CSI default diubah ke 1920x1080.
@@ -876,30 +876,24 @@ def main():
                 state["confidence"] = result["decision_margin"]
                 state["physio_used"] = result["physio_used"]
 
-            # [S4] Payload dirakit lewat kontrak resmi, bukan dict manual.
-            # Versi lama mengirim key "timestamp" padahal contracts.py memakai
-            # "ts", dan tidak menyertakan "version" sama sekali.
+            # [S4] Payload dirakit lewat kontrak resmi 2.0.0 (contracts.py):
+            # schema_version, session_id, dan ts milidetik diisi otomatis.
             if mq is not None:
-                fields = dict()
-                fields["mood_id"] = result["mood_id"]
-                fields["mood_label"] = result["mood_label"]
-                # Kontrak v1 masih bernama "confidence"; isinya decision_margin,
-                # heuristik jarak ke batas kategori, bukan peluang (ISU-079).
-                fields["confidence"] = result["decision_margin"]
-                fields["valence"] = result["valence"]
-                fields["arousal"] = result["arousal"]
-                fields["heart_rate_bpm"] = result["heart_rate_bpm"]
-                fields["hrv_ms"] = result["hrv_ms"]
-                fields["physio_used"] = result["physio_used"]
-                # [S1] Penanda simulasi ikut ke UI. Interface-Display wajib
-                # menampilkan pita peringatan bila field ini true. Butuh field
-                # `simulated` di contracts.py (lihat PATCH_NOTES.md bagian B).
-                fields["simulated"] = bool(DEMO_MODE)
-                try:
-                    payload = InferenceResult(**fields)
-                except TypeError:
-                    fields.pop("simulated", None)
-                    payload = InferenceResult(**fields)
+                payload = InferenceResult(
+                    session_id=mq.session_id,
+                    mood_id=result["mood_id"],
+                    mood_label=result["mood_label"],
+                    # Margin keputusan, bukan peluang (kontrak 3.3).
+                    decision_margin=result["decision_margin"],
+                    valence=result["valence"],
+                    arousal=result["arousal"],
+                    heart_rate_bpm=result["heart_rate_bpm"],
+                    hrv_ms=result["hrv_ms"],
+                    physio_used=result["physio_used"],
+                    # [S1] Penanda simulasi ikut ke UI; UI wajib menampilkan
+                    # penanda simulasi bila field ini true.
+                    simulated=bool(DEMO_MODE),
+                )
                 mq.publish_result(payload)
         except Exception as e:
             print("[Error] Forward pass gagal: " + str(e))
@@ -1005,6 +999,7 @@ def main():
         if mq is not None and frame_count % 15 == 0:
             try:
                 mq.publish_signal_quality(SignalQuality(
+                    session_id=mq.session_id,
                     face_detected=face_detected,
                     roi_stability=round(
                         min(len(buf_stgcn) / float(CLIP_LEN_STGCN), 1.0), 3),

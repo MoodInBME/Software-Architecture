@@ -23,6 +23,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `models/stc_rppg/config.yaml`: `training.lr` AdaDelta menjadi 1,0 sesuai paper rujukan STC-rPPG (sebelumnya 0,0001); `training.epochs` tetap 30. `train.py` menolak melanjutkan _checkpoint_ yang dilatih dengan lr berbeda dari config, karena memuat state optimizer ikut memulihkan lr lama.
 - `models/stc_rppg/train.py`: rugi domain waktu dan domain frekuensi dicatat terpisah per epoch, di layar dan di `riwayat_pelatihan.csv` dalam folder _checkpoint_ (beserta lr dan jenis rugi frekuensi).
 - Jendela jalur wajah menjadi 90 _frame_ (3 detik pada 30 fps) dengan geser 15 _frame_, sebelumnya 150 _frame_: `data.window_frames` di `models/st_gcn_graph_tran/config.yaml` dan nilai bawaan `train.py`, serta `clip_len_stgcn` di `config/default.yaml` dan `inference.py`. _Checkpoint_ ST-GCN lama tetap dapat dimuat karena bobot tidak bergantung pada panjang jendela, tetapi dilatih pada 150 _frame_.
+- `communication/` mengikuti kontrak IPC 2.0.0 di MoodIn-master: field wajib `schema_version`, `session_id`, dan `ts` (integer milidetik) di semua payload; `decision_margin` menggantikan `confidence`; `simulated` dan `physio_used` ikut dikirim; arah `moodin/ui/command` (`command`) dari antarmuka ke mesin inferensi; opsi TLS dan port 8883 dihapus sesuai ADR-10; topik baru `moodin/gesture/event` (`GestureEvent`, `publish_gesture`). **[lintas repo]** Isi `presence` dan `signal/quality` belum selaras kontrak.
 
 ### Ditambahkan
 
