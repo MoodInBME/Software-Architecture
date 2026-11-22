@@ -41,7 +41,7 @@ from data.preprocessing.affect_windows import (
 )  # noqa: E402
 
 DISFA_AUS = [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
-MAX_INTENSITY = 5.0
+from data.preprocessing.au_scale import AU_MAX as MAX_INTENSITY  # noqa: E402
 SRC_FPS = 20.0
 
 

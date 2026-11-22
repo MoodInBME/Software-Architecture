@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from data.preprocessing.au_scale import AU_MAX, ke_skala_asli
+
 
 def nme(pred: np.ndarray, gt: np.ndarray, outer_eye=(36, 45)) -> np.ndarray:
     """pred, gt: (N, 68, 2) dalam satuan sama. Return (N,) NME per frame; frame NaN diabaikan."""
@@ -54,19 +56,25 @@ def ccc(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(2 * cov / denom) if denom > 0 else float("nan")
 
 
-def au_report(
-    y_true: np.ndarray, y_pred: np.ndarray, au_list, scale: float = 5.0
-) -> dict:
-    """y_true, y_pred: (N, K) dalam 0..1. Laporan per AU pada skala asli 0..5."""
-    out = {}
+def au_report(y_true: np.ndarray, y_pred: np.ndarray, au_list) -> dict:
+    """y_true, y_pred: (N, K) dalam 0..1. Laporan per AU pada skala asli 0..5.
+
+    Masukan skala 0..5 (misalnya OpenFace AUxx_r mentah) ditolak dengan ValueError;
+    ubah dulu dengan ``data.preprocessing.au_scale.ke_satuan``.
+    """
+    y_true = ke_skala_asli(y_true, "y_true")
+    y_pred = ke_skala_asli(y_pred, "y_pred")
+    out = {"skala": f"0..{AU_MAX:g}"}
     for j, au in enumerate(au_list):
-        t, p = y_true[:, j] * scale, y_pred[:, j] * scale
+        t, p = y_true[:, j], y_pred[:, j]
         ok = ~(np.isnan(t) | np.isnan(p))
         out[f"AU{au}"] = {
             "icc31": icc31(t, p),
             "mae": float(np.abs(t[ok] - p[ok]).mean()) if ok.any() else float("nan"),
             "n": int(ok.sum()),
         }
-    vals = [v["icc31"] for v in out.values() if not np.isnan(v["icc31"])]
+    vals = [
+        v["icc31"] for v in out.values() if isinstance(v, dict) and not np.isnan(v["icc31"])
+    ]
     out["rerata_icc31"] = float(np.mean(vals)) if vals else float("nan")
     return out

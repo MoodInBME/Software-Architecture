@@ -72,7 +72,7 @@ Software-Architecture/
 ├── evaluation/                metrik valensi-arousal
 ├── communication/             klien MQTT dan skema pesan (kontrak 2.0.0)
 ├── config/default.yaml        konfigurasi inferensi
-├── tests/                     uji bentuk tensor STC-rPPG dan DiTAC
+├── tests/                     uji pytest (bentuk tensor, DiTAC, kontrak, pipeline)
 ├── notebooks/arsip-gemastik/  notebook pelatihan CK+ era GEMASTIK
 ├── docs/arsip-gemastik/       telaah kode dan rencana era GEMASTIK
 ├── inference.py               pipeline inferensi waktu nyata (era GEMASTIK)
@@ -104,15 +104,16 @@ python generate_dummy.py
 
 Perintah ini membuat `weights/dummy_stgcn.pth` dan `weights/dummy_stcrppg.pth`. Keluarannya tidak bermakna. Selama `demo_mode: true` di `config/default.yaml`, layar menampilkan penanda "MODE DEMO".
 
-### Uji bentuk tensor
+### Uji
 
 ```bash
-python -m tests.main
-python -m tests.test_ditac
+python -m pytest tests -q
 ```
 
-> [!WARNING]
-> Kedua skrip masih memakai jalur impor dari sebelum reorganisasi folder (Juli 2026), sehingga perlu diperbaiki lebih dulu. Perbaikannya dijadwalkan di M1.
+Uji bentuk STC-rPPG ada di `tests/test_stcrppg_shape.py` dan uji DiTAC di `tests/test_ditac.py`.
+
+> [!NOTE]
+> DiTAC (`models/stc_rppg/ditac.py`) mengikuti bentuk keluaran paper rujukan, tetapi transformasi T-nya interpolasi linear sepotong-sepotong yang monoton, bukan transformasi CPAB seperti di paper. Pada inisialisasi, DiTAC sama dengan GELU.
 
 ## 4. Dataset
 
@@ -136,12 +137,13 @@ Repo ini dimulai pada era GEMASTIK XIX 2026 oleh tim VisionaryX. Tabel berikut m
 
 | Berkas atau folder                                                                                                   | Penulis baris (kurang lebih)                   | Rujukan metode             |
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------- |
-| `models/stc_rppg/`: `cdc.py`, `ditac.py`, `fsfe.py`, `stfe.py`, `predictor.py`, `loss.py`, `train.py`, `config.yaml` | Tanuhita Setya Dhanurendra 100%                | STC-rPPG [1]               |
+| `models/stc_rppg/`: `cdc.py`, `fsfe.py`, `stfe.py`, `predictor.py`, `loss.py`, `train.py`, `config.yaml`            | Tanuhita Setya Dhanurendra 100%                | STC-rPPG [1]               |
+| `models/stc_rppg/ditac.py` (ditulis ulang mengikuti persamaan DiTAC di paper; versi awal karya Tanuhita)              | Jeremia 100%                                   | STC-rPPG [1]               |
 | `models/stc_rppg/model.py`                                                                                           | Jeremia 58%, Tanuhita 41%                      | STC-rPPG [1]               |
 | `models/stc_rppg/postprocessing.py`                                                                                  | Jeremia 100%                                   | —                          |
 | `data/loaders/dataset_ubfc_loader.py`, `data/loaders/prepare_data_ubfc.py`                                           | Tanuhita sekitar 67%, Jeremia sekitar 33%      | UBFC-rPPG [4]              |
 | `data/loaders/download_ubfc_kaggle.py`                                                                               | Jeremia 54%, Tanuhita 45%                      | —                          |
-| `tests/main.py`, `tests/test_ditac.py`                                                                               | Tanuhita 100%                                  | —                          |
+| `tests/test_stcrppg_shape.py`, `tests/test_ditac.py` (ditulis ulang dari `tests/main.py` dan `tests/test_ditac.py` versi awal karya Tanuhita) | Jeremia 100%                                   | —                          |
 | `train.py`                                                                                                           | Jeremia 83%, Tanuhita 16%                      | —                          |
 | `inference.py`                                                                                                       | Jeremia 99%; versi awal berkas dibuat Tanuhita | —                          |
 | `models/st_gcn_graph_tran/`                                                                                          | Jeremia 100%                                   | ST-GCN [5], Graph-Tran [6] |

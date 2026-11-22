@@ -1,18 +1,25 @@
-"""Pemetaan MediaPipe FaceMesh (468 titik) -> subset iBUG-68 (dlib).
+"""Pemetaan MediaPipe FaceMesh (468 titik) -> subset iBUG-68: SATU sumber untuk repo.
 
 Dipakai agar keluaran FaceMesh kompatibel dengan topologi graf 68-titik di
 `models/st_gcn_graph_tran/graph.py`. Urutan indeks mengikuti konvensi iBUG-68
 (jaw 0-16, alis 17-26, hidung 27-35, mata 36-47, bibir 48-67).
 
-CATATAN [Medium]: indeks ini perlu diverifikasi sekali dengan overlay visual
-(gambar wajah + titik) karena pemetaan 468->68 bersifat aproksimasi.
+Ada dua varian yang berbeda tepat di titik iBUG 0, 17, dan 26:
+  * ``A``: tabel lama berkas ini, dipakai ``inference.py`` (runtime cermin).
+  * ``B``: tabel lama ``landmark_extraction_mediapipe.py``, dipakai ekstraksi dataset
+    (``extract_landmarks_video.py``, ``afew_va.py``, ``disfa.py``).
+Varian belum dipilih: keputusan menunggu uji NME pada 300-W
+(``scripts/validasi/v1_nme_300w.py``). Sampai saat itu setiap pemanggil memakai
+varian yang sama seperti sebelumnya, sehingga runtime dan data latih masih memakai
+tabel yang berbeda di tiga titik itu (dicatat sebagai isu di log lintas repo).
+
+Kedua tabel adalah aproksimasi 468 -> 68, bukan angka dari paper.
 """
 from __future__ import annotations
 
 import numpy as np
 
-# 68 indeks MediaPipe FaceMesh yang mendekati titik iBUG-68 (berurutan iBUG).
-MEDIAPIPE_FACEMESH_TO_IBUG68 = [
+_TABEL_A = [
     # Jaw (0-16)
     162, 234, 93, 58, 172, 136, 149, 148, 152, 377, 378, 365, 397, 288, 323, 454, 389,
     # Alis kanan (17-21) & kiri (22-26)
@@ -26,7 +33,30 @@ MEDIAPIPE_FACEMESH_TO_IBUG68 = [
     78, 82, 13, 312, 308, 317, 14, 87,
 ]
 
-assert len(MEDIAPIPE_FACEMESH_TO_IBUG68) == 68, "Pemetaan harus tepat 68 titik"
+# Varian B = varian A kecuali tiga titik berikut (indeks iBUG -> indeks FaceMesh).
+_SELISIH_B = {0: 127, 17: 70, 26: 300}
+_TABEL_B = [_SELISIH_B.get(i, v) for i, v in enumerate(_TABEL_A)]
+
+VARIAN_PETA = {"A": tuple(_TABEL_A), "B": tuple(_TABEL_B)}
+TITIK_BERBEDA = tuple(sorted(_SELISIH_B))
+
+for _nama, _tabel in VARIAN_PETA.items():
+    assert len(_tabel) == 68, f"Peta {_nama} harus tepat 68 titik"
+    assert len(set(_tabel)) == 68, f"Peta {_nama} memuat indeks ganda"
+    assert all(0 <= i < 468 for i in _tabel), f"Peta {_nama} di luar 0..467"
+
+# Nama lama tetap ada supaya pemanggil tidak berubah perilaku.
+MEDIAPIPE_FACEMESH_TO_IBUG68 = list(VARIAN_PETA["A"])  # inference.py
+MEDIAPIPE_TO_IBUG68 = list(VARIAN_PETA["B"])  # ekstraksi dataset
+
+
+def peta_ibug68(varian: str) -> list[int]:
+    """Daftar 68 indeks FaceMesh untuk varian ``A`` atau ``B``."""
+    try:
+        return list(VARIAN_PETA[varian])
+    except KeyError:
+        raise ValueError(f"varian peta harus salah satu dari {sorted(VARIAN_PETA)}, bukan {varian!r}") from None
+
 
 # Rentang region pada indeks iBUG-68 (untuk analisis/plot per-region).
 IBUG68_REGIONS = {
@@ -41,10 +71,7 @@ IBUG68_REGIONS = {
     "mouth_inner": list(range(60, 68)),
 }
 
-_INDEX = np.asarray(MEDIAPIPE_FACEMESH_TO_IBUG68, dtype=np.int64)
-
-
-def subset_to_ibug68(landmarks: np.ndarray) -> np.ndarray:
+def subset_to_ibug68(landmarks: np.ndarray, varian: str = "A") -> np.ndarray:
     """Ambil 68 titik iBUG dari array FaceMesh.
 
     landmarks: (..., 468, D) -> keluaran (..., 68, D). Mengambil pada sumbu -2.
@@ -52,7 +79,7 @@ def subset_to_ibug68(landmarks: np.ndarray) -> np.ndarray:
     landmarks = np.asarray(landmarks)
     if landmarks.shape[-2] < 468:
         raise ValueError(f"Diharapkan >=468 titik, dapat {landmarks.shape[-2]}")
-    return np.take(landmarks, _INDEX, axis=-2)
+    return np.take(landmarks, np.asarray(peta_ibug68(varian), dtype=np.int64), axis=-2)
 
 
 if __name__ == "__main__":

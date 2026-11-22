@@ -29,6 +29,7 @@ class STGCNBlock(nn.Module):
     def __init__(self, in_channels, out_channels, k_num, t_kernel=9,
                  stride=1, residual=True, dropout=0.0):
         super().__init__()
+        self.stride = int(stride)  # dipakai model untuk menurunkan mask frame
         pad = (t_kernel - 1) // 2
         self.gcn = GraphConvolution(in_channels, out_channels, k_num)
         self.tcn = nn.Sequential(

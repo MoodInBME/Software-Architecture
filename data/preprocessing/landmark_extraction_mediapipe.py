@@ -4,10 +4,8 @@ Dipakai oleh:
   - data/preprocessing/extract_landmarks_video.py (ekstraksi + cache)
   - models/st_gcn_graph_tran/graph.py (topologi 68 titik)
 
-PENTING: pemetaan MEDIAPIPE_TO_IBUG68 di bawah adalah pemetaan yang UMUM
-dipakai komunitas (FaceMesh -> dlib/iBUG 68), BUKAN angka pasti dari paper.
-Indeks WAJIB diverifikasi secara visual (overlay pada wajah nyata) sebelum
-training sungguhan -- gunakan verify_mapping(). Lihat backlog docs/arsip-gemastik/ST-GCN-PLAN.md.
+Peta MEDIAPIPE_TO_IBUG68 (varian B) diambil dari landmark_map.py; varian A dan B
+berbeda di titik iBUG 0, 17, dan 26 dan dipilih setelah uji NME pada 300-W.
 """
 from __future__ import annotations
 
@@ -15,29 +13,8 @@ import numpy as np
 
 NUM_MEDIAPIPE_LANDMARKS = 468
 
-# 68 indeks FaceMesh (0-based) yang dipetakan ke konvensi iBUG-68.
-MEDIAPIPE_TO_IBUG68 = [
-    # Rahang / jaw (0-16): 17 titik mengikuti kontur wajah
-    127, 234, 93, 58, 172, 136, 149, 148, 152, 377, 378, 365, 397, 288, 323, 454, 389,
-    # Alis kanan (17-21)
-    70, 63, 105, 66, 107,
-    # Alis kiri (22-26)
-    336, 296, 334, 293, 300,
-    # Batang hidung (27-30)
-    168, 197, 5, 4,
-    # Dasar hidung (31-35)
-    75, 97, 2, 326, 305,
-    # Mata kanan (36-41)
-    33, 160, 158, 133, 153, 144,
-    # Mata kiri (42-47)
-    362, 385, 387, 263, 373, 380,
-    # Mulut luar (48-59)
-    61, 39, 37, 0, 267, 269, 291, 405, 314, 17, 84, 181,
-    # Mulut dalam (60-67)
-    78, 82, 13, 312, 308, 317, 14, 87,
-]
-
-assert len(MEDIAPIPE_TO_IBUG68) == 68, "Pemetaan harus tepat 68 titik"
+# Tabel peta ada di satu tempat: data/preprocessing/landmark_map.py (varian B di sini).
+from data.preprocessing.landmark_map import MEDIAPIPE_TO_IBUG68  # noqa: E402
 
 
 def mediapipe_to_ibug68(landmarks_468):

@@ -27,11 +27,15 @@ class AffectLandmarkDataset(Dataset):
         clip_len: int = 90,
         subjects=None,
         max_filled: float = 0.2,
+        return_frame_mask: bool = False,
     ):
         if isinstance(manifests, str):
             manifests = [manifests]
         self.au_list = list(au_list)
         self.clip_len = int(clip_len)
+        # True: __getitem__ menambah mask frame (T,) di akhir tuple; 1 = frame asli,
+        # 0 = padding (pengulangan frame terakhir untuk klip lebih pendek dari clip_len).
+        self.return_frame_mask = bool(return_frame_mask)
         self.items = []
         for m in manifests:
             root = os.path.dirname(os.path.abspath(m))
@@ -60,20 +64,29 @@ class AffectLandmarkDataset(Dataset):
 
     @staticmethod
     def _fix_len(x, length):
+        x, _ = AffectLandmarkDataset._fix_len_mask(x, length)
+        return x
+
+    @staticmethod
+    def _fix_len_mask(x, length):
+        """Potong tengah atau pad dengan frame terakhir. Return (x (C, length, V), mask (length,))."""
         t = x.shape[1]
+        mask = torch.ones(length)
         if t == length:
-            return x
+            return x, mask
         if t > length:
             s = (t - length) // 2
-            return x[:, s : s + length].contiguous()
-        return torch.cat([x, x[:, -1:].repeat(1, length - t, 1)], dim=1).contiguous()
+            return x[:, s : s + length].contiguous(), mask
+        mask[t:] = 0.0
+        pad = x[:, -1:].repeat(1, length - t, 1)
+        return torch.cat([x, pad], dim=1).contiguous(), mask
 
     def __getitem__(self, idx):
         root, it, src_aus = self.items[idx]
         data = torch.load(
             os.path.join(root, it["file"]), map_location="cpu", weights_only=True
         )
-        x = self._fix_len(data["landmarks"].float(), self.clip_len)
+        x, frame_mask = self._fix_len_mask(data["landmarks"].float(), self.clip_len)
         has_va = float(it.get("va_mask", 0.0)) > 0
         va = torch.tensor(
             [it["valence"], it["arousal"]] if has_va else [0.0, 0.0],
@@ -88,4 +101,6 @@ class AffectLandmarkDataset(Dataset):
                     if it["au_mask"][k] > 0 and it["au"][k] is not None:
                         au[j] = float(it["au"][k])
                         au_mask[j] = 1.0
+        if self.return_frame_mask:
+            return x, va, torch.tensor(float(has_va)), au, au_mask, frame_mask
         return x, va, torch.tensor(float(has_va)), au, au_mask

@@ -57,8 +57,39 @@ class STGCN_GraphTransformer(nn.Module):
         self.head = build_head(self.head_type, 256, num_class=num_class, dropout=dropout,
                                n_au=n_au)
 
-    def forward(self, x):
-        # x: (N, C, T, V)
+    def temporal_strides(self):
+        return [int(getattr(blk, "stride", 1)) for blk in self.blocks]
+
+    def downsample_mask(self, frame_mask: torch.Tensor) -> torch.Tensor:
+        """Mask frame (N, T) -> mask posisi waktu setelah blok ber-stride (N, T').
+
+        Konvolusi temporal ber-stride s dengan padding (k - 1) / 2 menghasilkan
+        ceil(T / s) posisi yang berpusat di frame 0, s, 2s, ...; mask diambil di
+        frame pusat yang sama.
+        """
+        m = frame_mask.bool()
+        for s in self.temporal_strides():
+            if s > 1:
+                m = m[:, ::s]
+        return m
+
+    def pool_temporal(self, feats: torch.Tensor, mask=None) -> torch.Tensor:
+        """Transformer temporal + rerata waktu. feats (N, T', C); mask (N, T') bool, True = frame asli.
+
+        Dengan mask, posisi padding tidak diperhatikan Transformer dan tidak ikut dirata-rata.
+        """
+        if mask is None:
+            return self.temporal_transformer(feats).mean(dim=1)
+        if mask.shape != feats.shape[:2]:
+            raise ValueError(f"mask {tuple(mask.shape)} tidak cocok dengan fitur {tuple(feats.shape[:2])}")
+        mask = mask.clone()
+        mask[:, 0] |= ~mask.any(dim=1)  # jaga agar tiap sampel punya minimal satu posisi
+        h = self.temporal_transformer(feats, key_padding_mask=~mask)
+        w = mask.to(h.dtype).unsqueeze(-1)
+        return (h * w).sum(dim=1) / w.sum(dim=1)
+
+    def forward(self, x, frame_mask=None):
+        """x: (N, C, T, V). frame_mask: (N, T), 1 = frame asli, 0 = padding (opsional)."""
         N, C, T, V = x.size()
         x = x.permute(0, 3, 1, 2).contiguous().view(N, V * C, T)
         x = self.data_bn(x)
@@ -67,8 +98,8 @@ class STGCN_GraphTransformer(nn.Module):
             x = blk(x, self.A)
         x = x.mean(dim=3)                      # (N, 256, T')  rata-rata spasial
         x = x.permute(0, 2, 1).contiguous()    # (N, T', 256)
-        x = self.temporal_transformer(x)
-        x = x.mean(dim=1)                      # (N, 256) global temporal pooling
+        mask = None if frame_mask is None else self.downsample_mask(frame_mask)
+        x = self.pool_temporal(x, mask)        # (N, 256) global temporal pooling
         out = self.head(x)
         if isinstance(out, dict):
             return out

@@ -36,6 +36,6 @@ class TemporalTransformer(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
 
-    def forward(self, x):  # x: (N, T, C)
+    def forward(self, x, key_padding_mask=None):  # x: (N, T, C); mask True = abaikan
         x = self.pos(x)
-        return self.encoder(x)
+        return self.encoder(x, src_key_padding_mask=key_padding_mask)
