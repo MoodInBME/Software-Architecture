@@ -1,0 +1,46 @@
+# =====================================================================
+# MoodIn_Software - requirements/windows-gpu.txt
+# Laptop Windows, Python 3.12, GPU NVIDIA (CUDA lewat wheel PyTorch).
+# =====================================================================
+# Urutan pasang (lengkap di docs/setup-windows.md):
+#   1. torch==2.5.1 dan torchvision==0.20.1 dari indeks cu124 (TIDAK di berkas ini)
+#   2. python -m pip install -r requirements/windows-gpu.txt -c requirements/constraints.txt
+#   3. python -m pip install --no-deps -r requirements/windows-nodeps.txt
+#   4. python -m pip install -r requirements-dev.txt -c requirements/constraints.txt
+# Versi persis dikunci di constraints.txt. torch dan torchvision sengaja tidak
+# dikunci di sini supaya pip tidak menggantinya dengan wheel CPU dari PyPI.
+# ---------------------------------------------------------------------
+
+# ---- Numerik & sinyal ----
+numpy
+scipy
+
+# ---- Visi komputer: SATU paket OpenCV saja ----
+# opencv-contrib-python dipilih karena mediapipe 0.10.14 memintanya; jangan
+# pasang opencv-python atau opencv-python-headless di venv yang sama.
+opencv-contrib-python
+
+# ---- Dependensi runtime mediapipe 0.10.14 (mediapipe dipasang --no-deps) ----
+# jax, jaxlib, dan sounddevice dari metadata mediapipe tidak dipasang;
+# solutions.face_mesh dan solutions.hands tidak mengimpornya (diuji 22 Nov 2026).
+absl-py
+attrs
+flatbuffers
+protobuf
+
+# ---- Konfigurasi & utilitas ----
+PyYAML
+tqdm
+
+# ---- Data & evaluasi ----
+pandas
+scikit-learn
+matplotlib
+seaborn
+
+# ---- Ekspor model ----
+onnx
+onnxruntime
+
+# ---- Kontrak IPC ----
+paho-mqtt

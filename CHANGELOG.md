@@ -43,6 +43,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `data/dataset_cards/label-harmonization.md` diringkas ke tingkat tinggi.
 - Pilihan backend kamera `camera_backend: csi | uvc` di `config/default.yaml` (bawaan `csi`); `uvc` membuka kamera lewat V4L2 dengan YUYV 640 × 480 pada 30 fps (usulan Logitech C920, ADR-15 di MoodIn-master). Modul baru `data/acquisition/` (`camera.py`, `frame_stats.py`). **[lintas repo]** Dokumentasi di Hardware-Connections.
 - `scripts/kunci_kontrol_uvc.sh` dan `config/uvc_kontrol.conf`: mengunci frekuensi jala-jala, eksposur, _white balance_, dan fokus pada kontrol yang tersedia saja. `scripts/uji_banding_kamera.py`: uji banding kamera yang hanya menulis CSV (selang antar-frame, frame hilang, kecerahan ROI per 10 detik), tanpa menyimpan frame.
+- Lingkungan Windows dengan GPU: `requirements/windows-gpu.txt`, `requirements/windows-nodeps.txt` (mediapipe dipasang `--no-deps`), dan `requirements/constraints.txt` (Python 3.12; numpy 1.26.4, mediapipe 0.10.14, satu paket OpenCV; torch dipasang terpisah dari indeks cu124). `scripts/cek_lingkungan.py` mencetak versi dan backend kamera tanpa membuka kamera. Panduan `docs/setup-windows.md`; `.venv-gpu/` diabaikan git.
 
 ### Dipindah
 

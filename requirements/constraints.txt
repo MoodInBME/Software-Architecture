@@ -1,0 +1,23 @@
+# Kunci versi untuk Python 3.12 (Windows dan Linux x86_64).
+# Dipakai dengan -c; tidak memasang apa pun sendiri.
+# torch dan torchvision TIDAK dikunci di sini (dipasang dari indeks cu124).
+numpy==1.26.4
+scipy==1.13.1
+opencv-contrib-python==4.10.0.84
+mediapipe==0.10.14
+absl-py==2.1.0
+attrs==24.2.0
+flatbuffers==24.3.25
+protobuf==4.25.5
+PyYAML==6.0.2
+tqdm==4.67.1
+pandas==2.2.3
+scikit-learn==1.5.2
+matplotlib==3.9.2
+seaborn==0.13.2
+onnx==1.16.2
+onnxruntime==1.18.1
+paho-mqtt==2.1.0
+pytest==8.3.4
+# torch 2.5.1 meminta sympy==1.13.1; cegah onnxruntime menaikkannya.
+sympy==1.13.1

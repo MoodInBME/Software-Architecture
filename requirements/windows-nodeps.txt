@@ -1,0 +1,6 @@
+# Dipasang dengan --no-deps (lihat docs/setup-windows.md):
+#   python -m pip install --no-deps -r requirements/windows-nodeps.txt
+# mediapipe 0.10.14 meminta opencv-contrib-python, jax, dan jaxlib. OpenCV sudah
+# dipasang dari windows-gpu.txt; jax tidak dibutuhkan solutions.face_mesh/hands.
+# Versi 1.x tidak punya mp.solutions (inference.py memakai solutions.face_mesh).
+mediapipe==0.10.14
