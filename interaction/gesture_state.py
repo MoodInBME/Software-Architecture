@@ -17,6 +17,13 @@ Aturan:
 
 Nilai ambang bawaan adalah titik awal, bukan hasil kalibrasi; kalibrasi dengan
 ``scripts/demo_gestur.py`` (angka rasio cubit ditampilkan di layar).
+
+Zoom (RANCANGAN, bawaan mati, menunggu keputusan Calon Dosen Pembimbing 1): bila
+``zoom_aktif``, ``select`` dikirim saat cubit DILEPAS tanpa gerakan, sedangkan cubit
+yang ditahan lalu digeser vertikal lebih dari ``zoom_ambang`` (dalam satuan layar)
+menghasilkan peristiwa ``zoom`` dengan ``nilai`` = faktor skala relatif terhadap awal
+cubit (geser ke atas memperbesar). ``zoom`` belum ada di kontrak IPC 2.0.0, sehingga
+``PenomorPeristiwa`` menolaknya; peristiwa ini hanya dipakai lokal di demo.
 """
 
 from __future__ import annotations
@@ -26,6 +33,8 @@ from dataclasses import dataclass
 from communication import topics
 from interaction.gesture_features import posisi_kursor, rasio_cubit, telapak_terbuka
 from interaction.one_euro import OneEuro2D
+
+GESTURE_ZOOM = "zoom"  # rancangan; bukan bagian kontrak IPC 2.0.0
 
 DIAM = "diam"
 MENUNJUK = "menunjuk"
@@ -39,6 +48,7 @@ class PeristiwaGestur:
     y: float | None
     score: float
     t: float
+    nilai: float | None = None  # faktor zoom (hanya untuk GESTURE_ZOOM)
 
 
 @dataclass
@@ -55,6 +65,9 @@ class SetelanGestur:
     area_y: tuple[float, float] = (0.15, 0.75)
     min_cutoff: float = 1.0
     beta: float = 0.007
+    zoom_aktif: bool = False  # rancangan, menunggu keputusan bimbingan
+    zoom_ambang: float = 0.04  # geser vertikal minimum (satuan layar) sebelum dianggap zoom
+    zoom_kepekaan: float = 2.0  # faktor = 1 + kepekaan * (y_awal - y)
 
     def __post_init__(self):
         if not 0 < self.ambang_tutup < self.ambang_buka:
@@ -87,6 +100,9 @@ class MesinGestur:
         self._t_pilih = None
         self._t_palm = None
         self._palm_terkirim = False
+        self._cubit_y0 = None
+        self._sedang_zoom = False
+        self.faktor_zoom = 1.0
         self.filter.reset()
 
     def set_fase_ukur(self, aktif: bool) -> None:
@@ -143,17 +159,41 @@ class MesinGestur:
         self.rasio = rasio_cubit(lm)
         sebelum = self.cubit
         sekarang = self._cubit_baru(self.rasio)
-        if sekarang and not sebelum:
-            boleh = self._t_pilih is None or t - self._t_pilih >= self.s.jeda_pilih_s
-            if boleh:
-                self._t_pilih = t
-                out.append(PeristiwaGestur(topics.GESTURE_SELECT, x, y, skor, t))
+        if self.s.zoom_aktif:
+            out += self._cubit_dengan_zoom(sebelum, sekarang, x, y, skor, t)
+        elif sekarang and not sebelum:
+            out += self._pilih(x, y, skor, t)
         self.keadaan = MEMILIH if sekarang else MENUNJUK
 
         if self._t_pointer is None or t - self._t_pointer >= 1.0 / self.s.maks_hz - 1e-9:
             self._t_pointer = t
             out.append(PeristiwaGestur(topics.GESTURE_POINTER, x, y, skor, t))
         return out
+
+
+    def _pilih(self, x, y, skor, t) -> list[PeristiwaGestur]:
+        if self._t_pilih is not None and t - self._t_pilih < self.s.jeda_pilih_s:
+            return []
+        self._t_pilih = t
+        return [PeristiwaGestur(topics.GESTURE_SELECT, x, y, skor, t)]
+
+    def _cubit_dengan_zoom(self, sebelum, sekarang, x, y, skor, t) -> list[PeristiwaGestur]:
+        """Rancangan zoom: pilih saat cubit dilepas tanpa geser; geser vertikal = zoom."""
+        if sekarang and not sebelum:
+            self._cubit_y0, self._sedang_zoom = y, False
+            return []
+        if sekarang and self._cubit_y0 is not None:
+            dy = self._cubit_y0 - y
+            if self._sedang_zoom or abs(dy) >= self.s.zoom_ambang:
+                self._sedang_zoom = True
+                self.faktor_zoom = max(0.25, 1.0 + self.s.zoom_kepekaan * dy)
+                return [PeristiwaGestur(GESTURE_ZOOM, x, y, skor, t, nilai=self.faktor_zoom)]
+            return []
+        if sebelum and not sekarang:
+            zoom = self._sedang_zoom
+            self._cubit_y0, self._sedang_zoom = None, False
+            return [] if zoom else self._pilih(x, y, skor, t)
+        return []
 
 
 class PenomorPeristiwa:
@@ -166,6 +206,8 @@ class PenomorPeristiwa:
     def __call__(self, p: PeristiwaGestur):
         from communication.contracts import GestureEvent
 
+        if p.gesture not in topics.GESTURES:
+            raise ValueError(f"Peristiwa {p.gesture!r} tidak ada di kontrak IPC 2.0.0; tidak dikirim lewat MQTT")
         ev = GestureEvent(
             session_id=self.session_id,
             seq=self.seq,

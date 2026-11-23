@@ -209,3 +209,61 @@ def test_mesin_tahan_cap_waktu_beresolusi_kasar_windows():
         evs += m.langkah(TUNJUK, 0.9, float(t))
     assert m.filter.n_waktu_tidak_naik >= 2
     assert any(e.gesture == "pointer" for e in evs)
+
+
+# ---------------------------------------------------------------- zoom (rancangan) dan demo
+def _cubit_di(y_pusat, r):
+    return tangan(jari=(True, False, False, False), ibu_terbuka=False, cubit=r, pusat=(0.5, y_pusat))
+
+
+def test_zoom_bawaan_mati_dan_perilaku_select_tidak_berubah():
+    assert SetelanGestur().zoom_aktif is False
+    m = MesinGestur()
+    evs, _ = _jalankan(m, [_cubit_di(0.6, 0.8)] * 3 + [_cubit_di(0.6, 0.1)] * 3)
+    assert _jenis(evs) == ["select"]  # select saat cubit menutup
+
+
+def test_zoom_rancangan_geser_vertikal_dan_tap():
+    from interaction.gesture_state import GESTURE_ZOOM
+
+    m = MesinGestur(SetelanGestur(zoom_aktif=True))
+    # Cubit tanpa geser lalu lepas: select saat dilepas.
+    evs, t = _jalankan(m, [_cubit_di(0.6, 0.8)] * 3 + [_cubit_di(0.6, 0.1)] * 5 + [_cubit_di(0.6, 0.8)] * 2)
+    assert _jenis(evs) == ["select"]
+    # Cubit lalu geser ke atas: zoom membesar, tidak ada select saat dilepas.
+    urutan = [_cubit_di(0.6, 0.1)] * 3 + [_cubit_di(0.6 - 0.02 * k, 0.1) for k in range(1, 15)]
+    urutan += [_cubit_di(0.32, 0.8)] * 2
+    evs, _ = _jalankan(m, urutan, t0=t + 1.0)
+    jenis = _jenis(evs)
+    assert "select" not in jenis and jenis.count(GESTURE_ZOOM) >= 3
+    zoom = [e.nilai for e in evs if e.gesture == GESTURE_ZOOM]
+    assert zoom[-1] > 1.0 and zoom == sorted(zoom)
+
+
+def test_zoom_tidak_bisa_dikirim_lewat_kontrak():
+    from interaction.gesture_state import GESTURE_ZOOM, PeristiwaGestur
+
+    with pytest.raises(ValueError, match="kontrak"):
+        PenomorPeristiwa("s")(PeristiwaGestur(GESTURE_ZOOM, 0.5, 0.5, 0.9, 0.0, nilai=1.2))
+
+
+def test_demo_menggambar_tanpa_kamera_dan_tanpa_menyimpan():
+    cv2 = pytest.importorskip("cv2")
+    from pathlib import Path
+
+    from scripts import demo_gestur as d
+
+    teks = Path(d.__file__).read_text(encoding="utf-8")
+    assert "imwrite" not in teks and "VideoWriter(" not in teks
+    m = MesinGestur(SetelanGestur(cermin=False, zoom_aktif=True))
+    frame = np.zeros((360, 640, 3), np.uint8)
+    for k, lm in enumerate([TUNJUK] * 5 + [TELAPAK] * 20 + [None] * 15):
+        m.langkah(lm, 0.9 if lm is not None else 0.0, k / 30.0)
+        t = k / 30.0
+        aktif = d.gestur_aktif(m, False, t)
+        assert aktif in {"tunjuk", "cubit", "telapak", "hilang"}
+        kotak = d.kotak_sam(640, 360)
+        d._gambar_kamera(cv2, frame, kotak, None, 2, m, False)
+        kanvas = np.zeros((360, 640 + d.LEBAR_PANEL, 3), np.uint8)
+        d._panel(cv2, kanvas, 640, aktif, d.progres_telapak(m, t), 30.0, ["x"], "Kembali", 1.0)
+    assert d.gestur_aktif(m, True, 0.0) == "ukur"

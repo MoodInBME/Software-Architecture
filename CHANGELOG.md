@@ -50,6 +50,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - Validasi lokal (sebagian): `docs/jejak-diagram.md` (blok diagram arsitektur ke kode, uji, dan metrik); `scripts/validasi/` berisi V1 NME 68 landmark pada 300-W, V3 CHROM pada UBFC-Phys terhadap BVP kontak (video dibaca streaming), V5 ekspor ONNX opset 17 beserta skrip TensorRT dan kalibrasi INT8 untuk Jetson, dan laporan padding AFEW-VA. `data/preprocessing/chrom.py` sebagai pembanding rPPG klasik. Semua keluaran wajib di luar repo.
 - `docs/cloud-training.md`: cloud (Kaggle, Colab lewat WSL2) hanya untuk data sintetis atau dataset yang lisensinya mengizinkan; larangan untuk Aff-Wild2, DISFA, video UBFC, dan data partisipan. `notebooks/kaggle_latih_stgcn.ipynb` ditandai DIBLOKIR sampai lisensi AFEW-VA dicek.
 - Windows: filter One Euro tidak lagi berhenti dengan galat bila cap waktu tidak naik (resolusi `time.monotonic` sekitar 15,6 ms); nilai terakhir dikembalikan dan kejadiannya dihitung. Demo gestur dan uji banding kamera memakai `time.perf_counter`. Tiga uji `kunci_kontrol_uvc.sh` dilewati di Windows. `pyproject.toml` memberi `pythonpath = ["."]` untuk pytest.
+- `scripts/demo_gestur.py`: panel legenda gestur (menunjuk, cubit, telapak ditahan dengan bilah kemajuan, tangan hilang) yang menyorot gestur terbaca, simulasi fase ukur 60 detik dengan hitung mundur (tombol m), dan pesan pilihan. Rancangan zoom (cubit lalu geser vertikal) di balik `--zoom` / `SetelanGestur.zoom_aktif`, bawaan mati dan tidak dikirim lewat MQTT karena belum ada di kontrak 2.0.0.
 
 ### Dipindah
 
