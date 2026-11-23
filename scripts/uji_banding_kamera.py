@@ -10,7 +10,8 @@ Contoh di Jetson, dari root repo:
 Keluaran: <prefix>_ringkasan.csv dan <prefix>_jendela.csv. Simpan di luar repo.
 
 Cap waktu: bila backend memberi cap waktu driver (CAP_PROP_POS_MSEC > 0), itu yang
-dipakai; selain itu waktu monotonic host setelah read(). Kolom ``sumber_waktu``
+dipakai; selain itu ``time.perf_counter`` host setelah read() (resolusi di bawah
+1 mikrodetik, juga di Windows, tidak seperti ``time.monotonic``). Kolom ``sumber_waktu``
 mencatat mana yang dipakai.
 """
 
@@ -43,7 +44,7 @@ def ukur(frames, expected_fps, roi=ROI_BAWAAN, window_s=10.0):
     for ts_driver, frame in frames:
         if sumber is None:
             sumber = "driver" if ts_driver is not None else "host"
-        ts = ts_driver if sumber == "driver" else time.monotonic()
+        ts = ts_driver if sumber == "driver" else time.perf_counter()
         if ts is None:
             raise ValueError("Cap waktu driver hilang di tengah sesi")
         st.add(ts, roi_luma(frame, roi))

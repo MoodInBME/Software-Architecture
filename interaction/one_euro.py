@@ -4,6 +4,11 @@ Frekuensi potong naik seiring kecepatan: saat tangan diam getar diredam kuat
 (``min_cutoff`` kecil), saat tangan bergerak cepat lag dikurangi (``beta``).
 Waktu dalam detik dari jam monoton, bukan nomor frame, sehingga laju frame yang
 berubah tidak mengubah perilaku filter.
+
+Cap waktu yang tidak naik (selisih nol atau negatif) tidak dianggap galat: di Windows
+``time.monotonic`` beresolusi sekitar 15,6 ms sehingga dua frame bisa mendapat cap
+waktu sama. Filter lalu mengembalikan nilai terfilter terakhir tanpa memperbarui
+keadaan, dan kejadiannya dihitung di ``n_waktu_tidak_naik``.
 """
 
 from __future__ import annotations
@@ -26,9 +31,12 @@ class OneEuro:
         self.reset()
 
     def reset(self) -> None:
+        """Hapus keadaan filter. Penghitung ``n_waktu_tidak_naik`` tidak direset."""
         self._t = None
         self._x = None
         self._dx = 0.0
+        if not hasattr(self, "n_waktu_tidak_naik"):
+            self.n_waktu_tidak_naik = 0
 
     def __call__(self, x: float, t: float) -> float:
         x = float(x)
@@ -37,7 +45,8 @@ class OneEuro:
             return x
         dt = float(t) - self._t
         if dt <= 0:
-            raise ValueError("Cap waktu harus naik")
+            self.n_waktu_tidak_naik += 1
+            return self._x
         dx = (x - self._x) / dt
         a_d = _alpha(self.d_cutoff, dt)
         self._dx = a_d * dx + (1 - a_d) * self._dx
@@ -58,6 +67,10 @@ class OneEuro2D:
     def reset(self) -> None:
         self.fx.reset()
         self.fy.reset()
+
+    @property
+    def n_waktu_tidak_naik(self) -> int:
+        return self.fx.n_waktu_tidak_naik
 
     def __call__(self, x: float, y: float, t: float) -> tuple[float, float]:
         return self.fx(x, t), self.fy(y, t)

@@ -83,8 +83,13 @@ def test_one_euro_meredam_getar_dan_mengikuti_langkah():
     f.reset()
     langkah = [f(0.2 if s < 1 else 0.8, s) for s in t]
     assert abs(langkah[-1] - 0.8) < 0.01  # tidak tertinggal setelah ~9 detik
-    with pytest.raises(ValueError):
-        f(0.5, t[-1])  # waktu tidak naik
+    terakhir = f(0.9, t[-1] + 0.05)
+    assert f.n_waktu_tidak_naik == 0
+    # Cap waktu sama atau mundur: nilai terakhir dikembalikan, keadaan tidak berubah.
+    assert f(0.1, t[-1] + 0.05) == terakhir
+    assert f(0.1, t[-1]) == terakhir
+    assert f.n_waktu_tidak_naik == 2
+    assert f(0.9, t[-1] + 0.1) != terakhir  # waktu naik lagi: filter berjalan normal
 
 
 # ---------------------------------------------------------------- mesin keadaan
@@ -190,3 +195,17 @@ def test_kotak_sam_demo():
     x0, y0, x1, y1 = k[4]
     assert kotak_di((x0 + x1) / 2 / 1280, (y0 + y1) / 2 / 720, k, 1280, 720) == 4
     assert kotak_di(0.5, 0.1, k, 1280, 720) is None
+
+
+def test_mesin_tahan_cap_waktu_beresolusi_kasar_windows():
+    # time.monotonic di Windows berlompatan sekitar 15,6 ms; pada 30 fps dua frame
+    # berurutan bisa mendapat cap waktu sama. Mesin tidak boleh berhenti dengan galat.
+    m = MesinGestur()
+    t_asli = np.arange(90) / 30.0
+    t_kasar = np.floor(t_asli / 0.0156) * 0.0156
+    t_kasar[10:13] = t_kasar[10]  # tiga frame dengan cap waktu sama
+    evs = []
+    for k, t in enumerate(t_kasar):
+        evs += m.langkah(TUNJUK, 0.9, float(t))
+    assert m.filter.n_waktu_tidak_naik >= 2
+    assert any(e.gesture == "pointer" for e in evs)

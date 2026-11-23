@@ -137,14 +137,14 @@ def main():
     pelacak = PelacakTangan(model_complexity=0)
     pilihan = None
     fase_ukur = False
-    t_prev, fps = time.monotonic(), 0.0
+    t_prev, fps = time.perf_counter(), 0.0
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 continue
             frame = cv2.flip(frame, 1)
-            t = time.monotonic()
+            t = max(time.perf_counter(), t_prev + 1e-6)
             lm, skor = pelacak.proses(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             h, w = frame.shape[:2]
             kotak = kotak_sam(w, h)

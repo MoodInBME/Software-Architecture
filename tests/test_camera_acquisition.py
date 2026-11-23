@@ -10,6 +10,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -161,6 +162,15 @@ white_balance_temperature_auto 0x0098090c (bool)   : default=1 value=1
 """
 
 
+# Skrip kunci_kontrol_uvc.sh ditujukan untuk Jetson/Linux (v4l2-ctl). Di Windows, bash
+# yang tersedia (Git Bash atau WSL) memetakan jalur dan izin eksekusi stub v4l2-ctl
+# secara berbeda, sehingga hasil uji tidak mewakili perangkat sasaran.
+LEWATI_DI_WINDOWS = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="skrip V4L2 untuk Jetson/Linux; bash di Windows (Git Bash/WSL) tidak mewakili sasaran",
+)
+
+
 def _jalankan(tmp_path, daftar):
     stub = tmp_path / "v4l2-ctl"
     log = tmp_path / "panggilan.log"
@@ -193,6 +203,7 @@ def _jalankan(tmp_path, daftar):
     return sets, r.stdout
 
 
+@LEWATI_DI_WINDOWS
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash tidak ada")
 def test_skrip_kunci_nama_kernel_baru(tmp_path):
     sets, _ = _jalankan(tmp_path, DAFTAR_BARU)
@@ -208,6 +219,7 @@ def test_skrip_kunci_nama_kernel_baru(tmp_path):
     ]
 
 
+@LEWATI_DI_WINDOWS
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash tidak ada")
 def test_skrip_kunci_nama_kernel_lama_dan_kontrol_hilang(tmp_path):
     sets, out = _jalankan(tmp_path, DAFTAR_LAMA)
@@ -223,6 +235,7 @@ def test_skrip_kunci_nama_kernel_lama_dan_kontrol_hilang(tmp_path):
     assert "tidak ada di perangkat ini: focus_absolute" in out
 
 
+@LEWATI_DI_WINDOWS
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash tidak ada")
 def test_skrip_menolak_nilai_tidak_valid(tmp_path):
     conf = tmp_path / "uvc.conf"

@@ -1,0 +1,4 @@
+# Konfigurasi alat saja; repo ini tidak dipaketkan sebagai pustaka.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
