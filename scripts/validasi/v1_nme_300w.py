@@ -1,21 +1,29 @@
 """V1: NME 68 landmark pada 300-W (01_Indoor dan 02_Outdoor, 600 gambar dengan .pts).
 
-Kandidat:
+Kandidat (semua memilih wajah yang kotaknya paling dekat dengan kotak anotasi .pts):
   * ``mediapipe_A`` dan ``mediapipe_B``: FaceMesh 468 titik lalu subset iBUG-68 varian A/B
-    (``data/preprocessing/landmark_map.py``);
-  * ``openface``: CSV FaceLandmarkImg (satu CSV per gambar, nama sama dengan gambar);
-  * ``dlib``: detektor HOG + shape_predictor_68 (bila paket dlib dan berkas model ada).
+    (``data/preprocessing/landmark_map.py``). Catatan: topologi FaceMesh bukan iBUG-68,
+    sehingga titik rahang dan alis secara definisi tidak berimpit dengan anotasi 300-W.
+  * ``openface``: CSV FaceLandmarkImg (satu CSV per gambar, nama sama dengan gambar).
+  * ``dlib_hog``: detektor HOG dlib + shape_predictor_68 (``--dlib-model``).
+  * ``yunet_dlib``: kotak wajah YuNet (OpenCV ``FaceDetectorYN``, ``--yunet-model``)
+    diteruskan ke shape_predictor_68 dlib.
 
-NME = rerata jarak titik ke titik dibagi jarak sudut luar mata acuan (titik 36 dan 45).
-Gagal = tidak ada deteksi atau NME > 0,08. AUC dihitung sampai 0,08 dari kurva CED
-(gagal dihitung tak hingga). Waktu per gambar diukur di CPU untuk kandidat yang
-dijalankan di skrip ini (OpenFace diukur terpisah oleh FaceLandmarkImg).
+Metrik:
+  * ``persen_terdeteksi``: ada prediksi wajah; ``persen_cocok``: kotak landmark prediksi
+    beririsan dengan kotak anotasi (IoU >= 0,3), yaitu wajah yang benar.
+  * NME rerata dan median hanya pada gambar yang cocok; NME = rerata jarak titik ke titik
+    dibagi jarak sudut luar mata acuan (titik 36 dan 45).
+  * ``auc_0_08`` dan ``persen_gagal`` atas SEMUA gambar (gagal = tidak cocok atau NME > 0,08).
+  * NME per wilayah (rahang 0-16, alis 17-26, hidung 27-35, mata 36-47, mulut 48-67) pada
+    gambar yang cocok.
+  * Waktu per gambar di CPU untuk kandidat yang dijalankan skrip ini (OpenFace diukur
+    oleh FaceLandmarkImg sendiri).
 
-Bila gambar memuat beberapa wajah, deteksi yang dipakai adalah yang pusat kotaknya
-paling dekat dengan pusat kotak landmark acuan (praktik umum pada 300-W).
-
-    python -m scripts.validasi.v1_nme_300w --root D:/300w --keluaran D:/moodin_runs/v1
-    python -m scripts.validasi.v1_nme_300w --root D:/300w --keluaran D:/moodin_runs/v1 --openface-dir D:/moodin_runs/v1/openface_csv
+    python -m scripts.validasi.v1_nme_300w --root D:/300w --keluaran D:/moodin_runs/v1b ^
+        --openface-dir D:/moodin_runs/v1/openface_csv ^
+        --dlib-model D:/models/shape_predictor_68_face_landmarks.dat ^
+        --yunet-model D:/models/face_detection_yunet_2023mar.onnx
 """
 
 from __future__ import annotations
@@ -27,10 +35,18 @@ from pathlib import Path
 
 import numpy as np
 
-from evaluation.affect_metrics import nme
 from scripts.validasi._umum import info_lingkungan, pastikan_di_luar_repo, tulis_json
 
 AMBANG = 0.08
+IOU_MIN = 0.3
+MATA_LUAR = (36, 45)
+WILAYAH = {
+    "rahang": range(0, 17),
+    "alis": range(17, 27),
+    "hidung": range(27, 36),
+    "mata": range(36, 48),
+    "mulut": range(48, 68),
+}
 
 
 def baca_pts(path) -> np.ndarray:
@@ -61,30 +77,83 @@ def daftar_gambar(root) -> list[tuple[Path, Path]]:
     return out
 
 
-def ringkas(nilai: list[float], waktu_ms: list[float]) -> dict:
-    e = np.asarray(nilai, dtype=np.float64)
-    gagal = ~np.isfinite(e) | (e > AMBANG)
-    xs = np.linspace(0, AMBANG, 801)
-    ced = [(np.nan_to_num(e, nan=np.inf) <= x).mean() for x in xs]
-    ok = e[np.isfinite(e)]
-    return {
-        "n": int(e.size),
-        "nme_rerata": float(ok.mean()) if ok.size else None,
-        "nme_median": float(np.median(ok)) if ok.size else None,
-        "auc_0_08": float(np.trapz(ced, xs) / AMBANG),
-        "persen_gagal": round(100.0 * gagal.mean(), 2),
-        "tanpa_deteksi": int((~np.isfinite(e)).sum()),
-        "ms_per_gambar_cpu": round(float(np.mean(waktu_ms)), 1) if waktu_ms else None,
-    }
+def kotak(p: np.ndarray) -> tuple[float, float, float, float]:
+    return (
+        float(p[:, 0].min()),
+        float(p[:, 1].min()),
+        float(p[:, 0].max()),
+        float(p[:, 1].max()),
+    )
+
+
+def iou(a, b) -> float:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    iw = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+    ih = max(0.0, min(ay1, by1) - max(ay0, by0))
+    inter = iw * ih
+    u = (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0) - inter
+    return inter / u if u > 0 else 0.0
 
 
 def _pilih_terdekat(kandidat: list[np.ndarray], gt: np.ndarray):
+    """Wajah yang pusat kotaknya paling dekat dengan pusat kotak anotasi."""
     if not kandidat:
         return None
     pusat = (gt.min(0) + gt.max(0)) / 2
     return min(
         kandidat, key=lambda p: np.linalg.norm((p.min(0) + p.max(0)) / 2 - pusat)
     )
+
+
+def nilai_gambar(pred, gt) -> dict:
+    """NME total dan per wilayah, serta status deteksi untuk satu gambar."""
+    if pred is None:
+        return {
+            "terdeteksi": False,
+            "cocok": False,
+            "nme": float("nan"),
+            **{f"nme_{w}": float("nan") for w in WILAYAH},
+        }
+    d = float(np.linalg.norm(gt[MATA_LUAR[0]] - gt[MATA_LUAR[1]]))
+    err = np.linalg.norm(pred - gt, axis=1) / d
+    out = {
+        "terdeteksi": True,
+        "cocok": iou(kotak(pred), kotak(gt)) >= IOU_MIN,
+        "nme": float(err.mean()),
+    }
+    for w, idx in WILAYAH.items():
+        out[f"nme_{w}"] = float(err[list(idx)].mean())
+    return out
+
+
+def ringkas(baris: list[dict], waktu_ms: list[float]) -> dict:
+    n = len(baris)
+    det = np.array([b["terdeteksi"] for b in baris])
+    cocok = np.array([b["cocok"] for b in baris])
+    e = np.array([b["nme"] for b in baris], dtype=np.float64)
+    e_all = np.where(cocok, e, np.inf)
+    xs = np.linspace(0, AMBANG, 801)
+    ced = [(e_all <= x).mean() for x in xs]
+    ok = e[cocok]
+    out = {
+        "n": n,
+        "persen_terdeteksi": round(100.0 * det.mean(), 2),
+        "persen_cocok": round(100.0 * cocok.mean(), 2),
+        "nme_rerata_cocok": float(ok.mean()) if ok.size else None,
+        "nme_median_cocok": float(np.median(ok)) if ok.size else None,
+        "auc_0_08": float(np.trapz(ced, xs) / AMBANG),
+        "persen_gagal": round(100.0 * (~(e_all <= AMBANG)).mean(), 2),
+        "ms_per_gambar_cpu": round(float(np.mean(waktu_ms)), 1) if waktu_ms else None,
+        "per_wilayah_cocok": {},
+    }
+    for w in WILAYAH:
+        v = np.array([b[f"nme_{w}"] for b in baris], dtype=np.float64)[cocok]
+        out["per_wilayah_cocok"][w] = {
+            "rerata": float(v.mean()) if v.size else None,
+            "median": float(np.median(v)) if v.size else None,
+        }
+    return out
 
 
 class KandidatMediaPipe:
@@ -108,32 +177,54 @@ class KandidatMediaPipe:
             np.array([[p.x * w, p.y * h] for p in f.landmark])
             for f in res.multi_face_landmarks
         ]
-        out = {}
-        for v in ("A", "B"):
-            idx = peta_ibug68(v)
-            out[v] = _pilih_terdekat([s[idx] for s in semua], gt)
-        return out
+        return {
+            v: _pilih_terdekat([s[peta_ibug68(v)] for s in semua], gt)
+            for v in ("A", "B")
+        }
 
 
 class KandidatDlib:
-    def __init__(self, model_path: str):
+    """shape_predictor_68 dlib dengan detektor HOG dlib atau kotak YuNet."""
+
+    def __init__(self, model_path: str, yunet_path: str | None = None):
         import dlib
 
+        self.dlib = dlib
         self.det = dlib.get_frontal_face_detector()
         self.sp = dlib.shape_predictor(model_path)
+        self.yunet = None
+        if yunet_path:
+            import cv2
 
-    def __call__(self, bgr, gt):
+            self.yunet = cv2.FaceDetectorYN.create(
+                yunet_path, "", (320, 320), 0.6, 0.3, 5000
+            )
+
+    def _bentuk(self, rgb, rect) -> np.ndarray:
+        s = self.sp(rgb, rect)
+        return np.array(
+            [[s.part(i).x, s.part(i).y] for i in range(68)], dtype=np.float64
+        )
+
+    def hog(self, bgr, gt):
         import cv2
 
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        return _pilih_terdekat([self._bentuk(rgb, r) for r in self.det(rgb, 1)], gt)
+
+    def yunet_dlib(self, bgr, gt):
+        import cv2
+
+        h, w = bgr.shape[:2]
+        self.yunet.setInputSize((w, h))
+        _, faces = self.yunet.detect(bgr)
+        if faces is None:
+            return None
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         hasil = []
-        for r in self.det(rgb, 1):
-            s = self.sp(rgb, r)
-            hasil.append(
-                np.array(
-                    [[s.part(i).x, s.part(i).y] for i in range(68)], dtype=np.float64
-                )
-            )
+        for f in faces:
+            x, y, fw, fh = (int(round(v)) for v in f[:4])
+            hasil.append(self._bentuk(rgb, self.dlib.rectangle(x, y, x + fw, y + fh)))
         return _pilih_terdekat(hasil, gt)
 
 
@@ -147,6 +238,12 @@ def baca_openface(folder: Path, img: Path, gt):
     return _pilih_terdekat(list(rec["landmarks"].astype(np.float64)), gt)
 
 
+def _ukur(fungsi, *a):
+    t = time.perf_counter()
+    hasil = fungsi(*a)
+    return hasil, 1000 * (time.perf_counter() - t)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -156,6 +253,10 @@ def main():
     ap.add_argument("--openface-dir")
     ap.add_argument(
         "--dlib-model", help="shape_predictor_68_face_landmarks.dat (opsional)"
+    )
+    ap.add_argument(
+        "--yunet-model",
+        help="face_detection_yunet_2023mar.onnx (opsional, butuh --dlib-model)",
     )
     ap.add_argument(
         "--maks", type=int, default=0, help="batasi jumlah gambar (0 = semua)"
@@ -177,51 +278,53 @@ def main():
     dl_c = None
     if args.dlib_model:
         try:
-            dl_c = KandidatDlib(args.dlib_model)
-        except (ImportError, RuntimeError) as e:
+            dl_c = KandidatDlib(args.dlib_model, args.yunet_model)
+        except (ImportError, RuntimeError, AttributeError) as e:
             print(f"dlib dilewati: {e}")
-    nilai = {k: [] for k in ("mediapipe_A", "mediapipe_B", "openface", "dlib")}
-    waktu = {k: [] for k in nilai}
-    baris = []
+    hasil = {}
+    waktu = {}
+    baris_csv = []
     for img, pts in pasangan:
         gt = baca_pts(pts)
         bgr = cv2.imread(str(img))
         if bgr is None:
             raise SystemExit(f"Gambar tidak terbaca: {img}")
-        t = time.perf_counter()
-        mp_out = mp_c(bgr, gt)
-        dt = 1000 * (time.perf_counter() - t)
-        prediksi = {"mediapipe_A": mp_out["A"], "mediapipe_B": mp_out["B"]}
-        waktu["mediapipe_A"].append(dt)
-        waktu["mediapipe_B"].append(dt)
+        prediksi = {}
+        mp_out, ms = _ukur(mp_c, bgr, gt)
+        prediksi["mediapipe_A"], prediksi["mediapipe_B"] = mp_out["A"], mp_out["B"]
+        waktu.setdefault("mediapipe_A", []).append(ms)
+        waktu.setdefault("mediapipe_B", []).append(ms)
         if args.openface_dir:
             prediksi["openface"] = baca_openface(Path(args.openface_dir), img, gt)
         if dl_c is not None:
-            t = time.perf_counter()
-            prediksi["dlib"] = dl_c(bgr, gt)
-            waktu["dlib"].append(1000 * (time.perf_counter() - t))
+            prediksi["dlib_hog"], ms = _ukur(dl_c.hog, bgr, gt)
+            waktu.setdefault("dlib_hog", []).append(ms)
+            if dl_c.yunet is not None:
+                prediksi["yunet_dlib"], ms = _ukur(dl_c.yunet_dlib, bgr, gt)
+                waktu.setdefault("yunet_dlib", []).append(ms)
         del bgr
-        rec = {"gambar": img.name, "subset": img.parent.name}
         for k, p in prediksi.items():
-            e = float(nme(p[None], gt[None])[0]) if p is not None else float("nan")
-            nilai[k].append(e)
-            rec[k] = e
-        baris.append(rec)
+            r = nilai_gambar(p, gt)
+            hasil.setdefault(k, []).append(r)
+            baris_csv.append(
+                {"gambar": img.name, "subset": img.parent.name, "kandidat": k, **r}
+            )
 
-    hasil = {k: ringkas(v, waktu[k]) for k, v in nilai.items() if v}
+    ringkasan = {k: ringkas(v, waktu.get(k, [])) for k, v in hasil.items()}
     lap = {
         "lingkungan": info_lingkungan(),
         "jumlah_gambar": len(pasangan),
         "ambang_gagal": AMBANG,
-        "kandidat": hasil,
+        "iou_min_cocok": IOU_MIN,
+        "kandidat": ringkasan,
     }
     tulis_json(folder / "v1_ringkasan.json", lap)
     with open(folder / "v1_per_gambar.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=sorted({k for r in baris for k in r}))
+        w = csv.DictWriter(f, fieldnames=list(baris_csv[0]))
         w.writeheader()
-        w.writerows(baris)
-    for k, v in hasil.items():
-        print(k, v)
+        w.writerows(baris_csv)
+    for k, v in ringkasan.items():
+        print(k, {x: y for x, y in v.items() if x != "per_wilayah_cocok"})
 
 
 if __name__ == "__main__":

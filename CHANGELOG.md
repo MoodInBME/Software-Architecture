@@ -51,6 +51,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 - `docs/cloud-training.md`: cloud (Kaggle, Colab lewat WSL2) hanya untuk data sintetis atau dataset yang lisensinya mengizinkan; larangan untuk Aff-Wild2, DISFA, video UBFC, dan data partisipan. `notebooks/kaggle_latih_stgcn.ipynb` ditandai DIBLOKIR sampai lisensi AFEW-VA dicek.
 - Windows: filter One Euro tidak lagi berhenti dengan galat bila cap waktu tidak naik (resolusi `time.monotonic` sekitar 15,6 ms); nilai terakhir dikembalikan dan kejadiannya dihitung. Demo gestur dan uji banding kamera memakai `time.perf_counter`. Tiga uji `kunci_kontrol_uvc.sh` dilewati di Windows. `pyproject.toml` memberi `pythonpath = ["."]` untuk pytest.
 - `scripts/demo_gestur.py`: panel legenda gestur (menunjuk, cubit, telapak ditahan dengan bilah kemajuan, tangan hilang) yang menyorot gestur terbaca, simulasi fase ukur 60 detik dengan hitung mundur (tombol m), dan pesan pilihan. Rancangan zoom (cubit lalu geser vertikal) di balik `--zoom` / `SetelanGestur.zoom_aktif`, bawaan mati dan tidak dikirim lewat MQTT karena belum ada di kontrak 2.0.0.
+- V1 diulang dengan metode yang lebih adil: status terdeteksi dan cocok (IoU kotak >= 0,3), NME rerata dan median hanya pada wajah yang cocok, NME per wilayah, kandidat dlib HOG dan YuNet + dlib. `scripts/validasi/README.md` mencatat sumber dan lisensi dlib-bin, model 68 titik, YuNet, dan OpenFace.
 
 ### Dipindah
 

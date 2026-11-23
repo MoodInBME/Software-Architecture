@@ -9,6 +9,9 @@ from scripts.validasi.v1_nme_300w import (
     _pilih_terdekat,
     baca_pts,
     daftar_gambar,
+    iou,
+    kotak,
+    nilai_gambar,
     ringkas,
 )
 from scripts.validasi.v3_chrom_ubfcphys import (
@@ -47,11 +50,42 @@ def test_daftar_gambar_hanya_indoor_outdoor(tmp_path):
     assert sorted(p.parent.name for p, _ in pasangan) == ["01_Indoor", "02_Outdoor"]
 
 
-def test_ringkasan_nme_auc_dan_gagal():
-    r = ringkas([0.0, 0.04, float("nan"), 0.2], [10.0, 20.0])
-    assert r["persen_gagal"] == 50.0 and r["tanpa_deteksi"] == 1
+def _wajah(dx=0.0, skala=1.0):
+    t = np.linspace(0, 2 * np.pi, 68, endpoint=False)
+    p = np.column_stack([100 + 40 * np.cos(t), 100 + 50 * np.sin(t)])
+    p[36], p[45] = [80.0, 90.0], [120.0, 90.0]  # jarak mata luar 40 piksel
+    return (p - 100) * skala + 100 + np.array([dx, 0.0])
+
+
+def test_nilai_gambar_per_wilayah_dan_cocok():
+    gt = _wajah()
+    pred = gt.copy()
+    pred[0:17] += np.array([4.0, 0.0])  # hanya rahang bergeser 4 piksel = 0,1 jarak mata
+    r = nilai_gambar(pred, gt)
+    assert r["cocok"] and r["nme_rahang"] == pytest.approx(0.1) and r["nme_mata"] == pytest.approx(0.0)
+    assert r["nme"] == pytest.approx(0.1 * 17 / 68)
+    salah = nilai_gambar(_wajah(dx=500.0), gt)  # wajah lain di gambar yang sama
+    assert salah["terdeteksi"] and not salah["cocok"]
+    kosong = nilai_gambar(None, gt)
+    assert not kosong["terdeteksi"] and np.isnan(kosong["nme"])
+    assert iou(kotak(gt), kotak(gt)) == pytest.approx(1.0)
+
+
+def test_ringkasan_hanya_menghitung_nme_pada_wajah_cocok():
+    gt = _wajah()
+    baris = [
+        nilai_gambar(gt, gt),  # sempurna
+        nilai_gambar(gt + np.array([1.6, 0.0]), gt),  # NME 0,04
+        nilai_gambar(None, gt),  # tidak terdeteksi
+        nilai_gambar(_wajah(dx=500.0), gt),  # wajah salah: tidak masuk rerata NME
+    ]
+    r = ringkas(baris, [10.0, 20.0])
+    assert r["persen_terdeteksi"] == 75.0 and r["persen_cocok"] == 50.0
+    assert r["nme_rerata_cocok"] == pytest.approx(0.02)
+    assert r["persen_gagal"] == 50.0
     # CED: 1/4 di 0, 2/4 dari 0,04 sampai 0,08 -> AUC = (0,25*0,04 + 0,5*0,04)/0,08 = 0,375
     assert r["auc_0_08"] == pytest.approx(0.375, abs=0.002)
+    assert set(r["per_wilayah_cocok"]) == {"rahang", "alis", "hidung", "mata", "mulut"}
     assert r["ms_per_gambar_cpu"] == 15.0
 
 
