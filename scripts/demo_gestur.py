@@ -59,6 +59,23 @@ LEGENDA = [
 ]
 
 
+JUDUL_JENDELA = "MoodIn - demo gestur"
+PETUNJUK = "Demo gestur berjalan. Keluar: q atau Esc di jendela, atau Ctrl+C di terminal. Fase ukur: m."
+MAKS_GAGAL_BACA = 30
+
+
+def aksi_tombol(kode: int) -> str | None:
+    """Kode dari cv2.waitKey -> "keluar", "ukur", atau None."""
+    if kode < 0:
+        return None
+    k = kode & 0xFF
+    if k in (ord("q"), ord("Q"), 27):
+        return "keluar"
+    if k in (ord("m"), ord("M")):
+        return "ukur"
+    return None
+
+
 def kotak_sam(
     lebar: int, tinggi: int, n: int = N_SAM
 ) -> list[tuple[int, int, int, int]]:
@@ -298,11 +315,18 @@ def main():
     t_ukur = None
     pesan, t_pesan = "", 0.0
     t_prev, fps = time.perf_counter(), 0.0
+    gagal_baca = 0
+    print(PETUNJUK)
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
+                gagal_baca += 1
+                if gagal_baca >= MAKS_GAGAL_BACA:
+                    print(f"Kamera berhenti mengirim frame ({MAKS_GAGAL_BACA} kali gagal). Periksa kabel atau aplikasi lain yang memakai kamera.")
+                    break
                 continue
+            gagal_baca = 0
             frame = cv2.flip(frame, 1)
             t = max(time.perf_counter(), t_prev + 1e-6)
             if t_ukur is not None and t - t_ukur >= DURASI_UKUR_S:
@@ -352,13 +376,16 @@ def main():
                 pesan if t - t_pesan < 1.5 else "",
                 mesin.faktor_zoom if args.zoom else None,
             )
-            cv2.imshow("MoodIn - demo gestur", kanvas)
-            key = cv2.waitKey(1) & 0xFF
-            if key in (ord("q"), 27):
+            cv2.imshow(JUDUL_JENDELA, kanvas)
+            aksi = aksi_tombol(cv2.waitKey(1))
+            # Tombol silang jendela tidak mengirim kode tombol; cek visibilitas jendela.
+            if aksi == "keluar" or cv2.getWindowProperty(JUDUL_JENDELA, cv2.WND_PROP_VISIBLE) < 1:
                 break
-            if key == ord("m"):
+            if aksi == "ukur":
                 t_ukur = None if t_ukur is not None else t
                 mesin.set_fase_ukur(t_ukur is not None)
+    except KeyboardInterrupt:
+        print("Dihentikan dengan Ctrl+C.")
     finally:
         pelacak.tutup()
         cap.release()

@@ -267,3 +267,14 @@ def test_demo_menggambar_tanpa_kamera_dan_tanpa_menyimpan():
         kanvas = np.zeros((360, 640 + d.LEBAR_PANEL, 3), np.uint8)
         d._panel(cv2, kanvas, 640, aktif, d.progres_telapak(m, t), 30.0, ["x"], "Kembali", 1.0)
     assert d.gestur_aktif(m, True, 0.0) == "ukur"
+
+
+def test_tombol_demo_keluar_dan_ukur():
+    from scripts.demo_gestur import aksi_tombol
+
+    assert aksi_tombol(-1) is None
+    assert aksi_tombol(ord("q")) == aksi_tombol(27) == aksi_tombol(ord("Q")) == "keluar"
+    assert aksi_tombol(ord("m")) == "ukur"
+    # waitKey di Windows bisa membawa bit tambahan di atas 8 bit terbawah.
+    assert aksi_tombol(0x100000 | 27) == "keluar"
+    assert aksi_tombol(ord("x")) is None

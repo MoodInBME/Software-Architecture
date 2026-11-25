@@ -58,6 +58,25 @@ def test_v2_jalan_ujung_ke_ujung_di_cpu(tmp_path):
         assert r["aktor_uji"] == 2 and np.isfinite(r["ccc_valensi"])
         assert r["akurasi_5_kelas"] is None or 0.0 <= r["akurasi_5_kelas"] <= 1.0
     assert sorted(p.name for p in (tmp_path / "out").glob("*.pt"))[0].startswith(
-        "stgcn_va_T48_lipatan"
+        "stgcn_va_T48_b3_lipatan"
     )
-    assert (tmp_path / "out" / "v2_T48_ringkasan.json").exists()
+    assert (tmp_path / "out" / "v2_T48_b3_ringkasan.json").exists()
+    assert lap["arsitektur"].startswith("ST-GCN 4 unit") and "tanpa Transformer" in lap["arsitektur"]
+    r = lap["per_lipatan"][0]
+    assert set(r["sebaran_label"]) == {"Ceria", "Cemas", "Tertekan", "Rileks", "Netral"}
+    assert r["mayoritas"]["kelas"] in r["sebaran_label"]
+
+
+def test_metrik_kelas_hanya_kelas_yang_hadir():
+    from scripts.validasi.v2_afew_stgcn import metrik_kelas
+
+    lab = np.array([0, 0, 0, 1, 1, 4])
+    pre = np.array([0, 0, 3, 1, 4, 4])
+    m = metrik_kelas(lab, pre)
+    assert m["kelas_dinilai"] == [0, 1, 4]
+    # recall: kelas 0 = 2/3, kelas 1 = 1/2, kelas 4 = 1/1
+    assert np.isclose(m["akurasi_seimbang"], (2 / 3 + 1 / 2 + 1) / 3)
+    assert 0.0 < m["f1_makro"] < 1.0
+    dasar = metrik_kelas(lab, np.zeros_like(lab))
+    assert np.isclose(dasar["akurasi_seimbang"], 1 / 3)
+    assert metrik_kelas(np.array([], int), np.array([], int))["f1_makro"] is None

@@ -6,13 +6,22 @@ model:
   graph_strategy: spatial # uniform | distance | spatial
   max_hop: 1
   t_kernel: 9
+  # Rancangan Pra-TA (B.3, ISU-100): empat unit 64-64-128-128, stride 2 di unit ke-3,
+  # tanpa Transformer. Susunan lama (6 unit + Transformer) tetap bisa dipakai untuk ablasi:
+  # channels [64, 64, 128, 128, 256, 256], strides [1, 1, 2, 1, 2, 1], use_transformer true.
+  channels: [64, 64, 128, 128]
+  strides: [1, 1, 2, 1]
+  use_transformer: false
+  block_dropout: 0.5
   transformer_layers: 2
   transformer_heads: 8
   transformer_ff: 512     # dim_ff TemporalTransformer
   dropout: 0.3
   head_type: va           # va | class | dual | au_va  (bawaan va; au_va setelah data DISFA tersedia)
-  # AU berlabel intensitas pada DISFA (ISU-071); dipakai head_type au_va.
-  au_list: [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
+  # AU kepala au_va (bimbingan 24 Nov 2026: AU7 diganti AU1). Label: DISFA intensitas 0..5
+  # dan Aff-Wild2 kemunculan 0/1; peta kolom ada di au_labels.py.
+  au_list: [1, 4, 6, 12]
+  au_sumber: [disfa, affwild2]
 
 data:
   window_frames: 90       # 3 detik @ 30 FPS (rancangan Pra-TA; era GEMASTIK 150)

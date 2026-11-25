@@ -6,6 +6,11 @@ Revisi (VA-bridge) atas versi awal:
     valence-arousal) sesuai alur fusion yang disepakati.
   * forward() mengembalikan dict: {'va': (B,2)} atau {'logits': (B,5)} atau keduanya.
   * head_type 'au_va': {'au': (B, n_au), 'va': (B, 2)}; n_au = panjang au_list di config.
+  * Susunan unit diatur ``channels`` dan ``strides``; ``use_transformer=False`` mengganti
+    Transformer temporal dengan rerata waktu bermask. Rancangan Pra-TA (B.3): empat unit
+    64-64-128-128, stride 2 di unit ke-3, tanpa Transformer. Nilai bawaan konstruktor tetap
+    susunan lama (enam unit + Transformer) agar bobot yang sudah ada masih bisa dimuat;
+    config.yaml memakai rancangan B.3.
 
 Kompatibel dengan komponen yang sudah ada:
   * st_gcn_block.STGCNBlock(in, out, k_num, t_kernel, stride, residual, dropout)
@@ -29,12 +34,27 @@ except ImportError:  # dijalankan sebagai skrip lepas
     from heads import build_head
 
 
+CHANNELS_LAMA = (64, 64, 128, 128, 256, 256)
+STRIDES_LAMA = (1, 1, 2, 1, 2, 1)
+CHANNELS_B3 = (64, 64, 128, 128)
+STRIDES_B3 = (1, 1, 2, 1)
+
+
 class STGCN_GraphTransformer(nn.Module):
     def __init__(self, in_channels=2, num_class=5, num_node=68,
                  graph_strategy="spatial", max_hop=1, t_kernel=9,
                  transformer_layers=2, transformer_heads=8, transformer_ff=512,
-                 dropout=0.3, head_type="va", n_au=12):
+                 dropout=0.3, head_type="va", n_au=12,
+                 channels=CHANNELS_LAMA, strides=STRIDES_LAMA,
+                 use_transformer=True, block_dropout=0.0):
         super().__init__()
+        channels, strides = tuple(int(c) for c in channels), tuple(int(s) for s in strides)
+        if not channels or len(channels) != len(strides):
+            raise ValueError(
+                f"channels {channels} dan strides {strides} harus sama panjang dan tidak kosong"
+            )
+        self.channels, self.strides = channels, strides
+        self.use_transformer = bool(use_transformer)
         self.head_type = head_type.lower()
         graph = FaceGraph(num_node=num_node, strategy=graph_strategy, max_hop=max_hop)
         A = torch.tensor(graph.A, dtype=torch.float32)
@@ -42,19 +62,22 @@ class STGCN_GraphTransformer(nn.Module):
         k_num = A.size(0)
 
         self.data_bn = nn.BatchNorm1d(in_channels * num_node)
-        self.blocks = nn.ModuleList([
-            STGCNBlock(in_channels, 64, k_num, t_kernel, residual=False),
-            STGCNBlock(64, 64, k_num, t_kernel),
-            STGCNBlock(64, 128, k_num, t_kernel, stride=2),
-            STGCNBlock(128, 128, k_num, t_kernel),
-            STGCNBlock(128, 256, k_num, t_kernel, stride=2),
-            STGCNBlock(256, 256, k_num, t_kernel),
-        ])
-        self.temporal_transformer = TemporalTransformer(
-            d_model=256, nhead=transformer_heads,
-            num_layers=transformer_layers, dim_ff=transformer_ff, dropout=dropout,
-        )
-        self.head = build_head(self.head_type, 256, num_class=num_class, dropout=dropout,
+        blok, c_in = [], in_channels
+        for i, (c_out, s) in enumerate(zip(channels, strides)):
+            # Unit pertama tanpa residual, mengikuti Yan dkk.: kanal masukan (x, y) terlalu
+            # sedikit untuk dijumlahkan langsung dengan 64 kanal keluaran.
+            blok.append(STGCNBlock(c_in, c_out, k_num, t_kernel, stride=s,
+                                   residual=i > 0, dropout=block_dropout))
+            c_in = c_out
+        self.blocks = nn.ModuleList(blok)
+        d = channels[-1]
+        self.temporal_transformer = None
+        if self.use_transformer:
+            self.temporal_transformer = TemporalTransformer(
+                d_model=d, nhead=transformer_heads,
+                num_layers=transformer_layers, dim_ff=transformer_ff, dropout=dropout,
+            )
+        self.head = build_head(self.head_type, d, num_class=num_class, dropout=dropout,
                                n_au=n_au)
 
     def temporal_strides(self):
@@ -74,17 +97,18 @@ class STGCN_GraphTransformer(nn.Module):
         return m
 
     def pool_temporal(self, feats: torch.Tensor, mask=None) -> torch.Tensor:
-        """Transformer temporal + rerata waktu. feats (N, T', C); mask (N, T') bool, True = frame asli.
+        """(Transformer temporal bila aktif) + rerata waktu. feats (N, T', C); mask (N, T') bool.
 
         Dengan mask, posisi padding tidak diperhatikan Transformer dan tidak ikut dirata-rata.
         """
+        tr = self.temporal_transformer
         if mask is None:
-            return self.temporal_transformer(feats).mean(dim=1)
+            return (tr(feats) if tr is not None else feats).mean(dim=1)
         if mask.shape != feats.shape[:2]:
             raise ValueError(f"mask {tuple(mask.shape)} tidak cocok dengan fitur {tuple(feats.shape[:2])}")
         mask = mask.clone()
         mask[:, 0] |= ~mask.any(dim=1)  # jaga agar tiap sampel punya minimal satu posisi
-        h = self.temporal_transformer(feats, key_padding_mask=~mask)
+        h = tr(feats, key_padding_mask=~mask) if tr is not None else feats
         w = mask.to(h.dtype).unsqueeze(-1)
         return (h * w).sum(dim=1) / w.sum(dim=1)
 
@@ -96,10 +120,10 @@ class STGCN_GraphTransformer(nn.Module):
         x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous()  # (N, C, T, V)
         for blk in self.blocks:
             x = blk(x, self.A)
-        x = x.mean(dim=3)                      # (N, 256, T')  rata-rata spasial
-        x = x.permute(0, 2, 1).contiguous()    # (N, T', 256)
+        x = x.mean(dim=3)                      # (N, C, T')  rata-rata spasial
+        x = x.permute(0, 2, 1).contiguous()    # (N, T', C)
         mask = None if frame_mask is None else self.downsample_mask(frame_mask)
-        x = self.pool_temporal(x, mask)        # (N, 256) global temporal pooling
+        x = self.pool_temporal(x, mask)        # (N, C) global temporal pooling
         out = self.head(x)
         if isinstance(out, dict):
             return out

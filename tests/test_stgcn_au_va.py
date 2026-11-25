@@ -23,7 +23,8 @@ DISFA_AUS = [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
 
 def test_config_au_list_dan_bawaan_va():
     cfg = train_mod.load_config(str(CONFIG))
-    assert cfg["model"]["au_list"] == DISFA_AUS
+    assert cfg["model"]["au_list"] == [1, 4, 6, 12]
+    assert cfg["model"]["au_sumber"] == ["disfa", "affwild2"]
     assert cfg["model"]["head_type"] == "va"
 
 

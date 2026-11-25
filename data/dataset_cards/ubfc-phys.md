@@ -16,7 +16,7 @@ Struktur berkas, laju _frame_ video, dan laju sampel sinyal **dibaca langsung da
 
 ## Cara pakai di repo
 
-Pemuat data UBFC-Phys belum ada. Pemuat akan dibuat di `data/loaders/` pada milestone M1, dan bagian ini diperbarui sesudahnya.
+`data/loaders/ubfc_phys.py` membaca BVP 64 Hz dan kelompok `test`/`ctrl` dari `info_sN.txt`, memeriksa kelengkapan subjek, dan memilih subjek seimbang per kelompok dengan seed tetap. Pemetaan tugas ke tiga kelas stres (T1 Normal; T2/T3 ctrl Stres Ringan; T2/T3 test Stres Akut) adalah asumsi penelitian, bukan label dataset. Skrip `scripts/validasi/v4_unduh_ubfcphys.py` mengambil berkas sinyal, memilih 10 test + 10 ctrl, lalu memproses video satu per satu dan menghapusnya; `v4_fitur_ubfcphys.py` membuat tabel fitur HRV per jendela. Semua keluaran di luar repo.
 
 ## Sitasi
 

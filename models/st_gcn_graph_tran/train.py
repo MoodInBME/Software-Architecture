@@ -34,12 +34,11 @@ try:
 except ImportError:
     yaml = None
 
-from models.st_gcn_graph_tran.model import STGCN_GraphTransformer
+from models.st_gcn_graph_tran.model import CHANNELS_LAMA, STRIDES_LAMA, STGCN_GraphTransformer
 from models.st_gcn_graph_tran.losses import build_loss
 from models.st_gcn_graph_tran.au_va_heads import masked_multitask_loss
 from models.st_gcn_graph_tran.mood_rules import MoodRuleDataset, mood_id_function
-
-DISFA_AU_LIST = [1, 2, 4, 5, 6, 9, 12, 15, 17, 20, 25, 26]
+from models.st_gcn_graph_tran.au_labels import AU_TA, validasi_au_list
 
 
 def load_config(path):
@@ -48,7 +47,9 @@ def load_config(path):
                   "graph_strategy": "spatial", "max_hop": 1, "t_kernel": 9,
                   "transformer_layers": 2, "transformer_heads": 8,
                   "transformer_ff": 512, "dropout": 0.3, "head_type": "va",
-                  "au_list": list(DISFA_AU_LIST)},
+                  "channels": [64, 64, 128, 128], "strides": [1, 1, 2, 1],
+                  "use_transformer": False, "block_dropout": 0.5,
+                  "au_list": list(AU_TA), "au_sumber": ["disfa", "affwild2"]},
         "data": {"window_frames": 90, "fps": 30, "neutral_radius": 0.2,
                  "mood_rule": "tabel33"},
         "loss": {"alpha_va": 1.0, "beta_cls": 0.5},
@@ -66,6 +67,9 @@ def load_config(path):
 
 def build_model(cfg):
     m = cfg["model"]
+    au_list = m.get("au_list", AU_TA)
+    if m.get("head_type", "va") == "au_va":
+        validasi_au_list(au_list, m.get("au_sumber", ("disfa", "affwild2")))
     return STGCN_GraphTransformer(
         in_channels=m["in_channels"], num_class=m["num_class"],
         num_node=m["num_node"], graph_strategy=m["graph_strategy"],
@@ -74,7 +78,23 @@ def build_model(cfg):
         transformer_heads=m["transformer_heads"],
         transformer_ff=m.get("transformer_ff", 512),
         dropout=m["dropout"], head_type=m.get("head_type", "va"),
-        n_au=len(m.get("au_list", DISFA_AU_LIST)),
+        n_au=len(au_list),
+        channels=m.get("channels", CHANNELS_LAMA),
+        strides=m.get("strides", STRIDES_LAMA),
+        use_transformer=m.get("use_transformer", True),
+        block_dropout=m.get("block_dropout", 0.0),
+    )
+
+
+def uraian_arsitektur(cfg) -> str:
+    """Satu baris susunan model untuk laporan, dibaca dari config yang benar-benar dipakai."""
+    m = cfg["model"]
+    ch = m.get("channels", CHANNELS_LAMA)
+    st = m.get("strides", STRIDES_LAMA)
+    tr = "+ Transformer temporal" if m.get("use_transformer", True) else "tanpa Transformer"
+    return (
+        f"ST-GCN {len(ch)} unit ({'-'.join(str(c) for c in ch)}, stride {list(st)}) {tr}, "
+        f"dropout unit {m.get('block_dropout', 0.0)}"
     )
 
 

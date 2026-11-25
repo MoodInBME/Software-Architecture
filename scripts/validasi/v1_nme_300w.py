@@ -8,6 +8,9 @@ Kandidat (semua memilih wajah yang kotaknya paling dekat dengan kotak anotasi .p
   * ``dlib_hog``: detektor HOG dlib + shape_predictor_68 (``--dlib-model``).
   * ``yunet_dlib``: kotak wajah YuNet (OpenCV ``FaceDetectorYN``, ``--yunet-model``)
     diteruskan ke shape_predictor_68 dlib.
+  * ``yunet_dlib_kalibrasi``: seperti ``yunet_dlib``, tetapi kotak YuNet dipetakan dulu ke
+    gaya kotak HOG dlib dengan parameter dari ``v1_kalibrasi_yunet.py`` (``--kalibrasi``).
+    Parameter dipasang pada bagian latih 300-W, bukan pada 600 gambar uji ini.
 
 Metrik:
   * ``persen_terdeteksi``: ada prediksi wajah; ``persen_cocok``: kotak landmark prediksi
@@ -23,7 +26,8 @@ Metrik:
     python -m scripts.validasi.v1_nme_300w --root D:/300w --keluaran D:/moodin_runs/v1b ^
         --openface-dir D:/moodin_runs/v1/openface_csv ^
         --dlib-model D:/models/shape_predictor_68_face_landmarks.dat ^
-        --yunet-model D:/models/face_detection_yunet_2023mar.onnx
+        --yunet-model D:/models/face_detection_yunet_2023mar.onnx ^
+        --kalibrasi D:/moodin_runs/v1_kalibrasi/kalibrasi_yunet_dlib.json
 """
 
 from __future__ import annotations
@@ -186,9 +190,12 @@ class KandidatMediaPipe:
 class KandidatDlib:
     """shape_predictor_68 dlib dengan detektor HOG dlib atau kotak YuNet."""
 
-    def __init__(self, model_path: str, yunet_path: str | None = None):
+    def __init__(
+        self, model_path: str, yunet_path: str | None = None, kalibrasi: dict | None = None
+    ):
         import dlib
 
+        self.kalibrasi = kalibrasi
         self.dlib = dlib
         self.det = dlib.get_frontal_face_detector()
         self.sp = dlib.shape_predictor(model_path)
@@ -212,7 +219,7 @@ class KandidatDlib:
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         return _pilih_terdekat([self._bentuk(rgb, r) for r in self.det(rgb, 1)], gt)
 
-    def yunet_dlib(self, bgr, gt):
+    def yunet_dlib(self, bgr, gt, kalibrasi: dict | None = None):
         import cv2
 
         h, w = bgr.shape[:2]
@@ -223,9 +230,18 @@ class KandidatDlib:
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         hasil = []
         for f in faces:
-            x, y, fw, fh = (int(round(v)) for v in f[:4])
-            hasil.append(self._bentuk(rgb, self.dlib.rectangle(x, y, x + fw, y + fh)))
+            x, y, fw, fh = (float(v) for v in f[:4])
+            b = (x, y, x + fw, y + fh)
+            if kalibrasi is not None:
+                from scripts.validasi.v1_kalibrasi_yunet import terapkan
+
+                b = terapkan(b, kalibrasi)
+            kiri, atas, kanan, bawah = (int(round(v)) for v in b)
+            hasil.append(self._bentuk(rgb, self.dlib.rectangle(kiri, atas, kanan, bawah)))
         return _pilih_terdekat(hasil, gt)
+
+    def yunet_dlib_kalibrasi(self, bgr, gt):
+        return self.yunet_dlib(bgr, gt, self.kalibrasi)
 
 
 def baca_openface(folder: Path, img: Path, gt):
@@ -259,6 +275,10 @@ def main():
         help="face_detection_yunet_2023mar.onnx (opsional, butuh --dlib-model)",
     )
     ap.add_argument(
+        "--kalibrasi",
+        help="kalibrasi_yunet_dlib.json dari v1_kalibrasi_yunet (opsional, butuh --yunet-model)",
+    )
+    ap.add_argument(
         "--maks", type=int, default=0, help="batasi jumlah gambar (0 = semua)"
     )
     args = ap.parse_args()
@@ -278,7 +298,12 @@ def main():
     dl_c = None
     if args.dlib_model:
         try:
-            dl_c = KandidatDlib(args.dlib_model, args.yunet_model)
+            kal = None
+            if args.kalibrasi:
+                from scripts.validasi.v1_kalibrasi_yunet import baca_kalibrasi
+
+                kal = baca_kalibrasi(args.kalibrasi)
+            dl_c = KandidatDlib(args.dlib_model, args.yunet_model, kal)
         except (ImportError, RuntimeError, AttributeError) as e:
             print(f"dlib dilewati: {e}")
     hasil = {}
@@ -302,6 +327,11 @@ def main():
             if dl_c.yunet is not None:
                 prediksi["yunet_dlib"], ms = _ukur(dl_c.yunet_dlib, bgr, gt)
                 waktu.setdefault("yunet_dlib", []).append(ms)
+                if dl_c.kalibrasi is not None:
+                    prediksi["yunet_dlib_kalibrasi"], ms = _ukur(
+                        dl_c.yunet_dlib_kalibrasi, bgr, gt
+                    )
+                    waktu.setdefault("yunet_dlib_kalibrasi", []).append(ms)
         del bgr
         for k, p in prediksi.items():
             r = nilai_gambar(p, gt)
